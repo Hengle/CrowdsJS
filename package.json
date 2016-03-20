@@ -1,0 +1,21 @@
+{
+  "name": "CrowdsJS",
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/austinEng/CrowdsJS"
+  },
+  "devDependencies": {
+    "domready": "^1.0.8",
+    "grunt": "^0.4.5",
+    "grunt-browserify": "^4.0.1",
+    "grunt-contrib-uglify": "^0.11.1"
+  },
+  "private": true,
+  "dependencies": {
+    "css-element-queries": "^0.3.2",
+    "fs": "0.0.2",
+    "onecolor": "^3.0.0",
+    "panelui": "0.0.2"
+  }
+}

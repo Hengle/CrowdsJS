@@ -1,0 +1,69 @@
+* {
+  box-sizing: border-box; }
+
+.panel-window {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background-color: #222; }
+
+.panel-group {
+  display: flex; }
+
+.panel-layout-horizontal {
+  flex-direction: row; }
+
+.panel-layout-vertical {
+  flex-direction: column; }
+
+.panel-block {
+  position: relative; }
+  .panel-block > .panel-content {
+    position: absolute;
+    left: 0px;
+    right: 0px;
+    top: 0px;
+    bottom: 0px;
+    padding: 10px;
+    margin: 3px;
+    border-radius: 4px;
+    color: #bbb;
+    background-color: #333; }
+
+.panel-block, .panel-group {
+  flex: 1 1 auto; }
+
+.panel-splitter-pos {
+  flex: 0 0 0px;
+  position: relative; }
+  .panel-splitter-pos > .panel-splitter {
+    display: block;
+    position: absolute;
+    left: 0px;
+    right: 0px;
+    top: 0px;
+    bottom: 0px;
+    z-index: 1; }
+    .panel-splitter-pos > .panel-splitter::after {
+      display: block;
+      content: '';
+      position: absolute;
+      left: 0px;
+      right: 0px;
+      top: 0px;
+      bottom: 0px;
+      margin: 4px; }
+    .panel-splitter-pos > .panel-splitter:hover::after, .panel-splitter-pos > .panel-splitter.active::after {
+      background-color: #666; }
+
+.panel-layout-horizontal > .panel-splitter-pos > .panel-splitter {
+  margin: 0px -5px; }
+  .panel-layout-horizontal > .panel-splitter-pos > .panel-splitter:hover {
+    cursor: col-resize; }
+
+.panel-layout-vertical > .panel-splitter-pos > .panel-splitter {
+  margin: -5px 0px; }
+  .panel-layout-vertical > .panel-splitter-pos > .panel-splitter:hover {
+    cursor: row-resize; }
+
+/*# sourceMappingURL=panelui.css.map */

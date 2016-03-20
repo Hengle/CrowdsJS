@@ -1,0 +1,33 @@
+* {
+  font-family: Helvetica
+}
+
+#container {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  left: 0px;
+  top: 0px;
+}
+
+#canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.panel-content > div {
+  width: 100%;
+  height: 100%; 
+}
+
+#main {
+  padding: 0
+}
+
+button {
+  background-color: #222;
+  color: white;
+  border: none;
+  padding: 14px;
+  font-size: 14px;
+}
