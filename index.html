@@ -16,6 +16,7 @@
     </div>
 
     <div id="sidebar-content">
+      <h1>Control</h1>
       <button id='run-btn'>Run</button>
       <button id='reset-btn'>Reset</button>
       <button id='stop-btn'>Stop</button>
@@ -23,7 +24,22 @@
       <br /><br/><hr/>
 
       <h1>Options</h1>
+        <div class="input-field">
+          <label>Marker Density:</label><input id='markerDensity' size='5' />
+        </div>
+        <div class="input-field">
+          <label>Search Radius:</label><input id='searchRadius' size='5' />
+        </div>
+        <br />
+        <div class="input-field">
+          <label>Right Preference:</label><input id='rightPreference' type='checkbox' />
+        </div>
+        <div class="input-field">
+          <label>Draw Markers:</label><input id='drawMarkers' type='checkbox' />
+        </div>
 
+        <br /><br />
+        <button id='update-btn'>Update</button>
       <br /><br/><hr/>
 
       <h1>Scenes</h1>

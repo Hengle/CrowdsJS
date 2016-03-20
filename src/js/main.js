@@ -49,22 +49,42 @@ domready(function () {
 
   var running = false
 
+  var options = {}
+
+  // var applyOptions = function(options) {
+  //   if (biocrowds) {
+  //     biocrowds.setOptions(options)
+  //   }
+  // }
+
   var loadScene = function(scene) {
     if (biocrowds && biocrowds.scene) {
       biocrowds.deinit()
     }
     scene.create()
-    biocrowds = new BioCrowds(gl, scene.options)
+    biocrowds = new BioCrowds(gl, scene.options())
+    options = biocrowds.getOptions()
     biocrowds.scene = scene
     biocrowds.init()
     biocrowds.initAgents(scene.agents)    
     gl.draw() 
+
+    document.getElementById('markerDensity').value = options.markerDensity
+    document.getElementById('searchRadius').value = options.searchRadius
+    document.getElementById('rightPreference').checked = options.rightPreference
+    document.getElementById('drawMarkers').checked = options.drawMarkers
+  }
+
+  document.getElementById('update-btn').onclick = function() {
+    options.markerDensity = parseFloat(document.getElementById('markerDensity').value)
+    options.searchRadius = parseFloat(document.getElementById('searchRadius').value)
+    options.rightPreference = document.getElementById('rightPreference').checked
+    options.drawMarkers = document.getElementById('drawMarkers').checked
   }
 
   document.getElementById('circle-scene-btn').onclick = function() {
     loadScene(CircleScene)
   }
-
 
   var simulationInterval
   var runSimulation = function() {
@@ -111,10 +131,15 @@ domready(function () {
     resetSimulation()
   }
 
-  //loadScene(CircleScene)
-
-  /*setInterval(function() {
-    biocrowds.step(1/24)
-    gl.draw()
-  }, 1000/24)*/
+  window.onkeypress = function(e) {
+    if (e.keyCode == 32) {
+      if (running) {
+        stopSimulation()
+      } else {
+        runSimulation()
+      }
+    } else if (e.keyCode == 114) {
+      resetSimulation()
+    }
+  }
 })

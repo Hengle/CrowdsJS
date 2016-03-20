@@ -20519,9 +20519,9 @@ var defaultOptions = {
   sizeZ: 30,
   markerDensity: 10,
   gridSize: 1,
-  searchRadius: 2.5,
+  searchRadius: 3,
   rightPreference: false,
-  drawMarkers: true
+  drawMarkers: false
 }
 
 var BioCrowds = function(gl, options) {
@@ -20531,6 +20531,8 @@ var BioCrowds = function(gl, options) {
       options[key] = defaultOptions[key]
     }
   }
+
+  console.log(options)
 
   var Marker = function(x, z) {
     return {
@@ -20769,6 +20771,7 @@ var BioCrowds = function(gl, options) {
     },
 
     step: function(t) {
+      console.log(options)
       var markerIndices = []
       var agentGrid = Grid()
       var markerGridCells = new Set()
@@ -20861,10 +20864,6 @@ var BioCrowds = function(gl, options) {
 
     getOptions: function() {
       return options
-    },
-
-    setOptions: function(opts) {
-      options = opts
     }
   }
   return bioCrowds
@@ -42328,22 +42327,42 @@ domready(function () {
 
   var running = false
 
+  var options = {}
+
+  // var applyOptions = function(options) {
+  //   if (biocrowds) {
+  //     biocrowds.setOptions(options)
+  //   }
+  // }
+
   var loadScene = function(scene) {
     if (biocrowds && biocrowds.scene) {
       biocrowds.deinit()
     }
     scene.create()
-    biocrowds = new BioCrowds(gl, scene.options)
+    biocrowds = new BioCrowds(gl, scene.options())
+    options = biocrowds.getOptions()
     biocrowds.scene = scene
     biocrowds.init()
     biocrowds.initAgents(scene.agents)    
     gl.draw() 
+
+    document.getElementById('markerDensity').value = options.markerDensity
+    document.getElementById('searchRadius').value = options.searchRadius
+    document.getElementById('rightPreference').checked = options.rightPreference
+    document.getElementById('drawMarkers').checked = options.drawMarkers
+  }
+
+  document.getElementById('update-btn').onclick = function() {
+    options.markerDensity = parseFloat(document.getElementById('markerDensity').value)
+    options.searchRadius = parseFloat(document.getElementById('searchRadius').value)
+    options.rightPreference = document.getElementById('rightPreference').checked
+    options.drawMarkers = document.getElementById('drawMarkers').checked
   }
 
   document.getElementById('circle-scene-btn').onclick = function() {
     loadScene(CircleScene)
   }
-
 
   var simulationInterval
   var runSimulation = function() {
@@ -42390,12 +42409,17 @@ domready(function () {
     resetSimulation()
   }
 
-  //loadScene(CircleScene)
-
-  /*setInterval(function() {
-    biocrowds.step(1/24)
-    gl.draw()
-  }, 1000/24)*/
+  window.onkeypress = function(e) {
+    if (e.keyCode == 32) {
+      if (running) {
+        stopSimulation()
+      } else {
+        runSimulation()
+      }
+    } else if (e.keyCode == 114) {
+      resetSimulation()
+    }
+  }
 })
 },{"./biocrowds":186,"./mygl.js":190,"./objects/cube.js":191,"./objects/plane.js":193,"./scenes/circle.js":195,"./shaderprogram.js":196,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],190:[function(require,module,exports){
 'use strict';
@@ -42956,8 +42980,10 @@ module.exports = {
 var Color = require('onecolor') 
 
 var scene = {
-  options: {
-    rightPreference: true
+  options: function() {
+    return {
+      rightPreference: true
+    }
   },
 
   agents: [],

@@ -15,9 +15,9 @@ var defaultOptions = {
   sizeZ: 30,
   markerDensity: 10,
   gridSize: 1,
-  searchRadius: 2.5,
+  searchRadius: 3,
   rightPreference: false,
-  drawMarkers: true
+  drawMarkers: false
 }
 
 var BioCrowds = function(gl, options) {
@@ -27,6 +27,8 @@ var BioCrowds = function(gl, options) {
       options[key] = defaultOptions[key]
     }
   }
+
+  console.log(options)
 
   var Marker = function(x, z) {
     return {
@@ -265,6 +267,7 @@ var BioCrowds = function(gl, options) {
     },
 
     step: function(t) {
+      console.log(options)
       var markerIndices = []
       var agentGrid = Grid()
       var markerGridCells = new Set()
@@ -357,10 +360,6 @@ var BioCrowds = function(gl, options) {
 
     getOptions: function() {
       return options
-    },
-
-    setOptions: function(opts) {
-      options = opts
     }
   }
   return bioCrowds

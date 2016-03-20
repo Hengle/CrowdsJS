@@ -3,8 +3,10 @@
 var Color = require('onecolor') 
 
 var scene = {
-  options: {
-    rightPreference: true
+  options: function() {
+    return {
+      rightPreference: true
+    }
   },
 
   agents: [],

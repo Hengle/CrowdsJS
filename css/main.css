@@ -2,6 +2,10 @@
   font-family: Helvetica
 }
 
+h1 {
+  color: white
+}
+
 #container {
   position: absolute;
   width: 100%;
@@ -24,10 +28,36 @@
   padding: 0
 }
 
-button {
+input, button {
   background-color: #222;
   color: white;
   border: none;
   padding: 14px;
   font-size: 14px;
+  margin-bottom: 5px;
+}
+
+label {
+  color: #ddd
+}
+
+label + input {
+  padding: 5px;
+  margin-left: 5px;
+  margin-right: 10px;
+}
+
+.input-field {
+  word-break: none;
+  display: inline-block
+}
+
+input[type=checkbox] {
+  margin-top: 0px;
+  margin-left: 5px;
+  width: 20px;
+  height: 20px;
+  position: relative;
+  top: 5px;
+  background: #333;
 }
