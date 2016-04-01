@@ -33,6 +33,7 @@ var scene = {
         forward: vec3.fromValues(Math.cos(a + PI), 0, Math.sin(a + PI)),
         col: vec4.fromValues(col.red(),col.green(),col.blue(),1),
         vel: vec3.create(),
+        acc: vec3.create(),
         goal: vec3.fromValues(R * Math.cos(a + PI), 0, R * Math.sin(a + PI)),
         id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
       })

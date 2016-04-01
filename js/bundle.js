@@ -21008,7 +21008,7 @@ var BioCrowds = function(gl, options) {
           var gx = 0.5*(screenPos[0]+1)*gridWidth
           var gy = 0.5*(screenPos[1]+1)*gridDepth
           
-          chunker.filterRadius(x,X,y,Y,20,ax,ay, id, function(x,X,y,Y, id) {
+          chunker.filterRadius(x,X,y,Y,25,ax,ay, id, function(x,X,y,Y, id) {
 
             var evaluateWeight = function(a, b, x, z, y) {
               var r = Math.sqrt(gx*gx+gy*gy)
@@ -21115,13 +21115,16 @@ var BioCrowds = function(gl, options) {
 
       for (var i = 0; i < agents.length; i++) {
         var totalW = 0
-        var mvec = vec2.create()
+        var mvec = vec2.fromValues(0,0)
 
         for (var j = 0; j < agents[i].blocks.length; j++) {
           totalW += agents[i].blocks[j].weight
         }
-        // console.log(totalW)
+
         for (var j = 0; j < agents[i].blocks.length; j++) {
+          if (isNaN(agents[i].blocks[j].pos[0])) {
+            continue
+          }
           vec2.scaleAndAdd(mvec, mvec, agents[i].blocks[j].pos, agents[i].blocks[j].weight / totalW)
         }
 
@@ -21130,12 +21133,44 @@ var BioCrowds = function(gl, options) {
         screenPos[1] = 0
 
         agents[i].vel = screenPos
+        // agents[i].acc = screenPos
         agents[i].forward = screenPos
       }
 
       for (var i = 0; i < agents.length; i++) {
         if (!agents[i].done) {   
-          vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
+          // vec3.scaleAndAdd(agents[i].vel, agents[i].vel, agents[i].acc, t)
+          // var speed = vec3.length(agents[i].vel)
+          // if (speed > 1.2) {
+            // vec3.scale(agents[i].vel, agents[i].vel, 1.2/speed)
+          // }
+          var test = vec3.create()
+          var r = vec3.create()
+          var scale = 1
+
+
+          vec3.scaleAndAdd(test, agents[i].pos, agents[i].vel, t*scale)
+          vec3.normalize(r, agents[i].vel)
+          vec3.scaleAndAdd(test, test, r, 0.5)
+          vec3.transformMat4(test, test, viewproj)
+          // console.log(test)
+          var x = 0.5*(test[0]+1)*gridWidth
+          var y = 0.5*(test[1]+1)*gridDepth
+          var idx = 4*(parseInt(x) + parseInt(y) * gridWidth)
+          var c = [voronoiBuffer[idx], voronoiBuffer[idx+1], voronoiBuffer[idx+2]]
+          var id = [Math.round(c[0]/255*RES), Math.round(c[1]/255*RES), Math.round(c[2]/255*RES)]
+          id = id[0] + id[1]*RES + id[2]*RES*RES
+          
+          if (id != i) {
+            console.log(i, 'hit', id, 'at', x, y, c)
+          } else {
+            vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
+
+            if (vec3.distance(agents[i].pos, agents[i].goal) < 0.5) {
+              agents[i].pos[0] = 1000000000
+              agents[i].goal[0] = 100000000
+            }
+          }
         }
 
         var offset = agents[i].pos
@@ -42763,7 +42798,7 @@ domready(function () {
           //biocrowds.step(1/24)
           gl.draw()
           biocrowds.step(1/24)
-        }, 1000/24)
+        }, 4)
       }
     }
   }
@@ -43537,6 +43572,7 @@ var scene = {
         forward: vec3.fromValues(Math.cos(a + PI), 0, Math.sin(a + PI)),
         col: vec4.fromValues(col.red(),col.green(),col.blue(),1),
         vel: vec3.create(),
+        acc: vec3.create(),
         goal: vec3.fromValues(R * Math.cos(a + PI), 0, R * Math.sin(a + PI)),
         id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
       })

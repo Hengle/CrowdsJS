@@ -100,7 +100,7 @@ domready(function () {
           //biocrowds.step(1/24)
           gl.draw()
           biocrowds.step(1/24)
-        }, 1000/24)
+        }, 4)
       }
     }
   }
