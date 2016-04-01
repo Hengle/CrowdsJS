@@ -20504,9 +20504,136 @@ module.exports = Panel;
 },{"classnames":24,"react":181,"react-dom":25}],186:[function(require,module,exports){
 'use strict'
 
+var GridChunker = require('./grid-chunk')
+
+var evaluateMarkerWeight = function(x, y, ax, ay, gx, gy) {
+  var v1 = vec2.fromValues(x-ax, y-ay)
+  var v2 = vec2.fromValues(gx-ax, gy-ay)
+  vec2.normalize(v1,v1)
+  vec2.normalize(v2,v2)
+  return 1 + vec2.dot(v1,v2)
+}
+
+module.exports = function(GL, projector, options) {
+
+  var edgeid = GL.createBuffer()
+  GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, edgeid)
+  GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, 0, GL.DYNAMIC_DRAW)
+
+  var edgepos = GL.createBuffer()
+  GL.bindBuffer(GL.ARRAY_BUFFER, edgepos)
+  GL.bufferData(GL.ARRAY_BUFFER, 0, GL.DYNAMIC_DRAW)
+
+  var edgecol = GL.createBuffer()
+  GL.bindBuffer(GL.ARRAY_BUFFER, edgecol)
+  GL.bufferData(GL.ARRAY_BUFFER, 0, GL.DYNAMIC_DRAW)
+
+  var bufferData
+
+  var chunker = new GridChunker()
+
+  this.chunk = function(agents, buffer, options) {
+    for (var i = 0; i < agents.length; i++) {
+      agents[i].blocks = []
+    }
+
+    var edge_pos = []
+    var edge_cols = []
+    var edge_ids = []
+    var edgeCount = 0
+
+    var screenPos = vec3.create()
+
+    chunker.init(buffer, options)
+    chunker.chunk(0,0,options.gridWidth,options.gridDepth, function(x,y,X,Y,col) {
+      var id = projector.col2ID(col)
+
+      if (id < agents.length) {
+        vec3.transformMat4(screenPos, agents[id].pos, projector.viewproj)
+        var ax = 0.5*(screenPos[0]+1)*options.gridWidth
+        var ay = 0.5*(screenPos[1]+1)*options.gridDepth
+        vec3.transformMat4(screenPos, agents[id].goal, projector.viewproj)
+        var gx = 0.5*(screenPos[0]+1)*options.gridWidth
+        var gy = 0.5*(screenPos[1]+1)*options.gridDepth
+
+        chunker.filterRadius(x,X,y,Y,25,ax,ay, id, function(x,X,y,Y, id) {
+          var w1 = evaluateMarkerWeight(x, y, ax, ay, gx, gy)
+          var w2 = evaluateMarkerWeight(X, y, ax, ay, gx, gy)
+          var w3 = evaluateMarkerWeight(x, Y, ax, ay, gx, gy)
+          var w4 = evaluateMarkerWeight(X, Y, ax, ay, gx, gy)
+          var W = w1+w2+w3+w4
+
+          var pos = vec2.fromValues(
+            (x-ax)*w1/W + (X-ax)*w2/W + (x-ax)*w3/W + (X-ax)*w4/W, 
+            (y-ay)*w1/W + (y-ay)*w2/W + (Y-ay)*w3/W + (Y-ay)*w4/W)
+
+          agents[id].blocks.push({
+            pos: pos, 
+            weight: W*(X-x)*(Y-y)
+          })
+
+          var l = edgeCount
+          edge_ids.push.apply(edge_ids, [l,l+1, l+1,l+2, l+2,l+3, l+3,l])
+          var nx = x / options.gridWidth * 2 - 1
+          var nX = X / options.gridWidth * 2 - 1
+          var ny = y / options.gridDepth * 2 - 1
+          var nY = Y / options.gridDepth * 2 - 1
+          edge_pos.push.apply(edge_pos,[
+            nx,ny,0.5,1,
+            nX,ny,0.5,1,
+            nX,nY,0.5,1,
+            nx,nY,0.5,1
+          ])
+          edgeCount += 4
+          var r = agents[id].col[0]
+          var g = agents[id].col[1]
+          var b = agents[id].col[2]
+
+          edge_cols.push.apply(edge_cols, [
+            r, g, b, 1,
+            r, g, b, 1,
+            r, g, b, 1,
+            r, g, b, 1
+          ])
+        })
+      }
+    })
+
+    GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, edgeid)
+    GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16Array(edge_ids), GL.DYNAMIC_DRAW)
+
+    GL.bindBuffer(GL.ARRAY_BUFFER, edgepos)
+    GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(edge_pos), GL.DYNAMIC_DRAW)
+
+    GL.bindBuffer(GL.ARRAY_BUFFER, edgecol)
+    GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(edge_cols), GL.DYNAMIC_DRAW)
+
+    bufferData = {
+      positions: edgepos,
+      colors: edgecol,
+      indices: edgeid,
+      drawMode: GL.LINES,
+      count: edge_ids.length
+    }
+  }
+
+  this.buffer = function() {
+    return bufferData
+  }
+}
+},{"./grid-chunk":187}],187:[function(require,module,exports){
+'use strict'
+
 module.exports = function(thebuffer, theoptions) {
-  var buffer = thebuffer
-  var options = theoptions
+  var buffer
+  var options
+  
+  this.init = function(thebuffer, theoptions) {
+    buffer = thebuffer
+    options = theoptions
+  }
+
+  this.init(thebuffer, theoptions)
 
   var indexOf = function(x, y) {
     return 4*(x + y * options.sizeX/options.gridSize)
@@ -20602,7 +20729,7 @@ module.exports = function(thebuffer, theoptions) {
     }
   }
 }
-},{}],187:[function(require,module,exports){
+},{}],188:[function(require,module,exports){
 'use strict'
 
 var Sobol = require('../lib/sobol.js')
@@ -20613,7 +20740,9 @@ var Cone = require('../objects/cone.js')
 var Triangle = require('../objects/triangle.js')
 var Plane = require('../objects/plane.js')
 var ShaderProgram = require('../shaderprogram.js')
-var GridChunker = require('./grid-chunk')
+var BlockGenerator = require('./block-generate')
+var VoronoiGenerator = require('./voronoi-generate')
+var Projector = require('./projector')
 
 var defaultOptions = {
   originX: -15,
@@ -20646,6 +20775,8 @@ var BioCrowds = function(gl, options) {
 
   var gridWidth = Math.ceil(options.sizeX / options.gridSize)
   var gridDepth = Math.ceil(options.sizeZ / options.gridSize)
+  options.gridWidth = gridWidth
+  options.gridDepth = gridDepth
 
   var Grid = function() {
     
@@ -20733,22 +20864,21 @@ var BioCrowds = function(gl, options) {
   var markerGrid
   var agents= []
   var drawables = []
-  var voronoiFBO
-  var voronoiBuffer = new Uint8Array(gridWidth*gridDepth*4)
-  var viewproj = mat4.create()
-  var invviewproj = mat4.create()
-  var Sprite
-  var offsetBuffer
-  var offsetArray
 
-  var edgeid
-  var edgepos
-  var edgecol
+  var voronoiBuffer = new Uint8Array(gridWidth*gridDepth*4)
+
+  var projector
+  var blockGenerator
+  var voronoiGenerator
 
   var bioCrowds = {
     init: function() {
       markerGrid = Grid()
 
+      var GL = gl.getGL()
+      projector = new Projector(options)
+      blockGenerator = new BlockGenerator(GL, projector, options)
+      voronoiGenerator = new VoronoiGenerator(GL, projector, options)
       // var numMarkers = options.sizeX*options.sizeZ*options.markerDensity
       // for (var i = 0; i < numMarkers; i++) {
       //   var vec = sobol.nextVector()
@@ -20784,49 +20914,6 @@ var BioCrowds = function(gl, options) {
       gl.drawables.push(groundPlane)
 
       // bioCrowds.setupMarkerBuffers()
-
-      var GL = gl.getGL()
-      var voronoiFBO = GL.createFramebuffer()
-      GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiFBO);
-      var rttTexture = GL.createTexture();
-      GL.bindTexture(GL.TEXTURE_2D, rttTexture);
-      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
-      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
-      GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, gridWidth, gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
-
-      var renderbuffer = GL.createRenderbuffer();
-      GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
-      GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, gridWidth, gridDepth)
-      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, rttTexture, 0)
-      GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
-
-      GL.bindFramebuffer(GL.FRAMEBUFFER, null)
-      GL.bindRenderbuffer(GL.RENDERBUFFER, null)
-      GL.bindTexture(GL.TEXTURE_2D, null)
-
-      var view = mat4.create()
-      var projection = mat4.create()
-      mat4.lookAt(view, vec3.fromValues(0,100,0), vec3.fromValues(0,0,0), vec3.fromValues(0,0,-1))
-      mat4.ortho(projection, 
-        options.originX, options.sizeX + options.originX, 
-        options.originZ, options.sizeZ + options.originZ, 
-        0.1, 200)
-      mat4.multiply(viewproj, projection, view)
-      mat4.invert(invviewproj, viewproj)
-
-
-
-      edgeid = GL.createBuffer()
-      GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, edgeid)
-      GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, null, GL.DYNAMIC_DRAW)
-
-      edgepos = GL.createBuffer()
-      GL.bindBuffer(GL.ARRAY_BUFFER, edgepos)
-      GL.bufferData(GL.ARRAY_BUFFER, null, GL.DYNAMIC_DRAW)
-
-      edgecol = GL.createBuffer()
-      GL.bindBuffer(GL.ARRAY_BUFFER, edgecol)
-      GL.bufferData(GL.ARRAY_BUFFER, null, GL.DYNAMIC_DRAW)
     },
 
     deinit: function() {
@@ -20930,188 +21017,32 @@ var BioCrowds = function(gl, options) {
         }
       }
 
-      var ids = [];
-      // var offsets = [];
-      offsetArray = new Float32Array(agents.length*3)
-
       for (var i = 0; i < agents.length; i++) {
         agents[i].done = false
         agents[i].markers = []
-        var offset = agents[i].pos
-        offsetArray[3*i] = offset[0]
-        offsetArray[3*i+1] = offset[1]
-        offsetArray[3*i+2] = offset[2]
-        // offsets.push.apply(offsets, [offset[0], offset[1], offset[2]])
-        ids.push.apply(ids, agents[i].id)
 
         var agent = agentPainter(i)
         gl.drawables.push(agent)
         drawables.push(agent)
       }
 
-      var GL = gl.getGL()
-      var cone = Cone.get()
-      offsetBuffer = GL.createBuffer()
-      GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
-      GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
-      offsetBuffer.itemSize = 3
-      offsetBuffer.numItems = agents.length
-
-      var idBuffer = GL.createBuffer()
-      GL.bindBuffer(GL.ARRAY_BUFFER, idBuffer)
-      GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(ids), GL.DYNAMIC_DRAW)
-      idBuffer.itemSize = 3
-      idBuffer.numItems = agents.length
-
-      Sprite = {
-        positions: cone.positions,
-        normals: cone.normals,
-        colors: cone.colors,
-        indices: cone.indices,
-        count: cone.count,
-        drawMode: cone.drawMode,
-        offsets: offsetBuffer,
-        ids: idBuffer
-      }
+      voronoiGenerator.initAgentBuffers(agents)
     },
 
     step: function(t) {
       var GL = gl.getGL()
       // GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiFBO)
       GL.clear( GL.DEPTH_BUFFER_BIT)
-      GL.viewport(0, 0, gridWidth, gridDepth)
-      gl.VoronoiShader.setViewProj(viewproj)
-      gl.VoronoiShader.draw(Sprite, true)
+      GL.viewport(0, 0, options.gridWidth, options.gridDepth)
+      gl.VoronoiShader.setViewProj(projector.viewproj)
+      gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)
       GL.readPixels(0,0,gridWidth,gridDepth, GL.RGBA, GL.UNSIGNED_BYTE, voronoiBuffer)
-      // console.log(voronoiBuffer)
 
-      for (var i = 0; i < agents.length; i++) {
-        agents[i].blocks = []
-      }
-      var edges = []
-      var edge_cols = []
-      var edge_ids = []
-      var edgeCount = 0
-      var RES = 10
-      var screenPos = vec3.create()
-      var chunker = new GridChunker(voronoiBuffer, options)
-      chunker.chunk(0,0,gridWidth,gridDepth, function(x,y,X,Y,col) {
+      blockGenerator.chunk(agents, voronoiBuffer, options)
 
-        var id = [Math.round(col[0]/255*RES), Math.round(col[1]/255*RES), Math.round(col[2]/255*RES)]
-        id = id[0] + id[1]*RES + id[2]*RES*RES
-
-        if (id < agents.length) {
-          vec3.transformMat4(screenPos, agents[id].pos, viewproj)
-          var ax = 0.5*(screenPos[0]+1)*gridWidth
-          var ay = 0.5*(screenPos[1]+1)*gridDepth
-          vec3.transformMat4(screenPos, agents[id].goal, viewproj)
-          var gx = 0.5*(screenPos[0]+1)*gridWidth
-          var gy = 0.5*(screenPos[1]+1)*gridDepth
-          
-          chunker.filterRadius(x,X,y,Y,25,ax,ay, id, function(x,X,y,Y, id) {
-
-            var evaluateWeight = function(a, b, x, z, y) {
-              var r = Math.sqrt(gx*gx+gy*gy)
-              var x2 = Math.pow(x,2)
-              var z2 = Math.pow(z,2)
-              var y2 = Math.pow(y,2)
-              var x3 = Math.pow(x,3)
-              var z3 = Math.pow(z,3)
-              var y3 = Math.pow(y,3)
-              var ax = Math.abs(x)
-              var az = Math.abs(z)
-              var ay = Math.abs(y)
-
-              var mx = -(a*y3*Math.asinh(z/ay) - a*y3*Math.asinh(x/ay) - 2*a*z3*Math.asinh(y/az) + 2*a*x3*Math.asinh(y/ax) - 2*b*Math.pow(y2+z2, 3/2) - a*z*y*Math.sqrt(y2+z2) + 2*b*Math.pow(y2+x2, 3/2) + a*x*y*Math.sqrt(y2+x2) + (3*r*x2 - 3*r*z2)*y) / (6*r)
-              var my = (2*b*y3*Math.asinh(z/ay) - 2*b*y3*Math.asinh(x/ay) - b*z3*Math.asinh(y/az) + b*x3*Math.asinh(y/ax) + 2*a*Math.pow(y2+z2, 3/2) + b*z*y*Math.sqrt(y2+z2) - 2*a*Math.pow(y2+x2, 3/2) - b*z*y*Math.sqrt(y2+x2) + (3*r*z - 3*r*x)*y2) / (6*r)
-              var w = (b*y2*Math.asinh(z/ay) - b*y2*Math.asinh(x/ay) + a*z2*Math.asinh(y/az) - a*x2*Math.asinh(y/ax) + (a*y+b*z)*Math.sqrt(y2+z2) + (-a*y-b*x)*Math.sqrt(y2+x2) + (2*r*z-2*r*x)*y) / (2*r)
-
-              return [mx, my, w]
-            }
-
-            var evaluateMarkerWeight = function(x, y) {
-              var v1 = vec2.fromValues(x-ax, y-ay)
-              var v2 = vec2.fromValues(gx-ax, gy-ay)
-              vec2.normalize(v1,v1)
-              vec2.normalize(v2,v2)
-              return 1 + vec2.dot(v1,v2)
-            }
-
-            var w1 = evaluateMarkerWeight(x, y)
-            var w2 = evaluateMarkerWeight(X, y)
-            var w3 = evaluateMarkerWeight(x, Y)
-            var w4 = evaluateMarkerWeight(X, Y)
-            var W = w1+w2+w3+w4
-
-            var pos = vec2.fromValues(
-              (x-ax)*w1/W + (X-ax)*w2/W + (x-ax)*w3/W + (X-ax)*w4/W, 
-              (y-ay)*w1/W + (y-ay)*w2/W + (Y-ay)*w3/W + (Y-ay)*w4/W)
-
-            agents[id].blocks.push({
-              pos: pos, 
-              weight: W*(X-x)*(Y-y)
-            })
-
-            var l = edgeCount
-            edge_ids.push.apply(edge_ids, [l,l+1, l+1,l+2, l+2,l+3, l+3,l])
-            var nx = x / gridWidth * 2 - 1
-            var nX = X / gridWidth * 2 - 1
-            var ny = y / gridDepth * 2 - 1
-            var nY = Y / gridDepth * 2 - 1
-            edges.push.apply(edges,[
-              nx,ny,0.5,1,
-              nX,ny,0.5,1,
-              nX,nY,0.5,1,
-              nx,nY,0.5,1
-            ])
-            edgeCount += 4
-            var r = agents[id].col[0]
-            var g = agents[id].col[1]
-            var b = agents[id].col[2]
- 
-            edge_cols.push.apply(edge_cols, [
-              r, g, b, 1,
-              r, g, b, 1,
-              r, g, b, 1,
-              r, g, b, 1
-            ])
-
-          })          
-          //agents[id].blocks.push([])
-          
-          // var v1 = evaluateWeight(gx-ax, gy-ay, x-ax, X-ax, y-ay)
-          // var v2 = evaluateWeight(gx-ax, gy-ay, x-ax, X-ax, Y-ay)
-
-          // agents[id].blocks.push([ v2[0]-v1[0], v2[1]-v1[1], v2[2]-v1[2] ])
-        }
-      })
-
-      // edge_ids = [0,1,1,2]
-      // edges = [-1,0,0,1, 0,-1,0,1, 1,1,0,1]
-      // edge_cols = [1,0,0,1, 0,1,0,1, 0,0,1,1]
-
-      // console.log(edge_cols)
-
-      GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, edgeid)
-      GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16Array(edge_ids), GL.DYNAMIC_DRAW)
-
-      GL.bindBuffer(GL.ARRAY_BUFFER, edgepos)
-      GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(edges), GL.DYNAMIC_DRAW)
-
-      GL.bindBuffer(GL.ARRAY_BUFFER, edgecol)
-      GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(edge_cols), GL.DYNAMIC_DRAW)
-
-      var bufferData = {
-        positions: edgepos,
-        colors: edgecol,
-        indices: edgeid,
-        drawMode: GL.LINES,
-        count: edge_ids.length
-      }
       GL.clear( GL.DEPTH_BUFFER_BIT)
-      // GL.viewport(0,0,GL.viewportWidth, GL.viewportHeight)
-      GL.viewport(gridWidth, 0, gridWidth, gridDepth)
-      gl.PixelShader.draw(bufferData)
+      GL.viewport(options.gridWidth, 0, options.gridWidth, options.gridDepth)
+      gl.PixelShader.draw(blockGenerator.buffer())
 
       for (var i = 0; i < agents.length; i++) {
         var totalW = 0
@@ -21128,32 +21059,27 @@ var BioCrowds = function(gl, options) {
           vec2.scaleAndAdd(mvec, mvec, agents[i].blocks[j].pos, agents[i].blocks[j].weight / totalW)
         }
 
-        screenPos = vec3.fromValues(2*mvec[0]/gridWidth, 2*mvec[1]/gridDepth, 0)
-        vec3.transformMat4(screenPos, screenPos, invviewproj)
+        var screenPos = vec3.fromValues(2*mvec[0]/options.gridWidth, 2*mvec[1]/options.gridDepth, 0)
+        vec3.transformMat4(screenPos, screenPos, projector.invviewproj)
         screenPos[1] = 0
 
         agents[i].vel = screenPos
-        // agents[i].acc = screenPos
         agents[i].forward = screenPos
       }
 
       for (var i = 0; i < agents.length; i++) {
         if (!agents[i].done) {   
-          // vec3.scaleAndAdd(agents[i].vel, agents[i].vel, agents[i].acc, t)
-          // var speed = vec3.length(agents[i].vel)
-          // if (speed > 1.2) {
-            // vec3.scale(agents[i].vel, agents[i].vel, 1.2/speed)
-          // }
+
           var test = vec3.create()
           var r = vec3.create()
           var scale = 1
 
-
+          var RES = 10  
           vec3.scaleAndAdd(test, agents[i].pos, agents[i].vel, t*scale)
           vec3.normalize(r, agents[i].vel)
           vec3.scaleAndAdd(test, test, r, 0.5)
-          vec3.transformMat4(test, test, viewproj)
-          // console.log(test)
+          vec3.transformMat4(test, test, projector.viewproj)
+
           var x = 0.5*(test[0]+1)*gridWidth
           var y = 0.5*(test[1]+1)*gridDepth
           var idx = 4*(parseInt(x) + parseInt(y) * gridWidth)
@@ -21162,7 +21088,7 @@ var BioCrowds = function(gl, options) {
           id = id[0] + id[1]*RES + id[2]*RES*RES
           
           if (id != i) {
-            console.log(i, 'hit', id, 'at', x, y, c)
+            // console.log(i, 'hit', id, 'at', x, y, c)
           } else {
             vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
 
@@ -21173,14 +21099,9 @@ var BioCrowds = function(gl, options) {
           }
         }
 
-        var offset = agents[i].pos
-        offsetArray[3*i] = offset[0]
-        offsetArray[3*i+1] = offset[1]
-        offsetArray[3*i+2] = offset[2]
       }
 
-      GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
-      GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+      voronoiGenerator.updateBuffers()
 
 
       /*var markerIndices = []
@@ -21290,7 +21211,126 @@ var BioCrowds = function(gl, options) {
 }
 
 module.exports = BioCrowds
-},{"../lib/sobol.js":189,"../objects/cone.js":192,"../objects/cube.js":193,"../objects/cylinder.js":194,"../objects/plane.js":195,"../objects/triangle.js":196,"../shaderprogram.js":199,"./grid-chunk":186}],188:[function(require,module,exports){
+},{"../lib/sobol.js":192,"../objects/cone.js":195,"../objects/cube.js":196,"../objects/cylinder.js":197,"../objects/plane.js":198,"../objects/triangle.js":199,"../shaderprogram.js":202,"./block-generate":186,"./projector":189,"./voronoi-generate":190}],189:[function(require,module,exports){
+'use strict'
+
+module.exports = function(options) {
+
+  var viewproj = mat4.create()
+  var invviewproj = mat4.create()
+  var view = mat4.create()
+  var projection = mat4.create()
+  mat4.lookAt(view, vec3.fromValues(0,100,0), vec3.fromValues(0,0,0), vec3.fromValues(0,0,-1))
+  mat4.ortho(projection, 
+    options.originX, options.sizeX + options.originX, 
+    options.originZ, options.sizeZ + options.originZ, 
+    0.1, 200)
+  mat4.multiply(viewproj, projection, view)
+  mat4.invert(invviewproj, viewproj)
+
+  var projector = {
+    view: view,
+    projection: projection,
+    viewproj: viewproj,
+    invviewproj: invviewproj,
+    RES: 10,
+    col2ID: function(col) {
+      var id = [
+      Math.round(col[0]/255*projector.RES), 
+      Math.round(col[1]/255*projector.RES), 
+      Math.round(col[2]/255*projector.RES)]
+      id = id[0] + id[1]*projector.RES + id[2]*projector.RES*projector.RES
+      return id
+    }
+  }
+
+  return projector
+
+}
+},{}],190:[function(require,module,exports){
+'use strict'
+
+var Cone = require('../objects/cone.js')
+
+module.exports = function(GL, projector, options) {
+  var voronoiFBO = GL.createFramebuffer()
+  GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiFBO);
+  var rttTexture = GL.createTexture();
+  GL.bindTexture(GL.TEXTURE_2D, rttTexture);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
+  GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, options.gridWidth, options.gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
+
+  var renderbuffer = GL.createRenderbuffer();
+  GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
+  GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
+  GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, rttTexture, 0)
+  GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
+
+  GL.bindFramebuffer(GL.FRAMEBUFFER, null)
+  GL.bindRenderbuffer(GL.RENDERBUFFER, null)
+  GL.bindTexture(GL.TEXTURE_2D, null)
+
+  var offsetArray
+  var offsetBuffer
+  var sprites
+  var agents
+  this.initAgentBuffers = function(theagents) {
+    agents = theagents
+
+    var ids = []
+    offsetArray = new Float32Array(agents.length*3)
+
+    for (var i = 0; i < agents.length; i++) {
+      var offset = agents[i].pos
+      offsetArray[3*i] = offset[0]
+      offsetArray[3*i+1] = offset[1]
+      offsetArray[3*i+2] = offset[2]
+
+      ids.push.apply(ids, agents[i].id)
+    }
+
+    var cone = Cone.get()
+    offsetBuffer = GL.createBuffer()
+    GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
+    GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+    offsetBuffer.itemSize = 3
+    offsetBuffer.numItems = agents.length
+
+    var idBuffer = GL.createBuffer()
+    GL.bindBuffer(GL.ARRAY_BUFFER, idBuffer)
+    GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(ids), GL.DYNAMIC_DRAW)
+    idBuffer.itemSize = 3
+    idBuffer.numItems = agents.length
+
+    sprites = {
+      positions: cone.positions,
+      normals: cone.normals,
+      colors: cone.colors,
+      indices: cone.indices,
+      count: cone.count,
+      drawMode: cone.drawMode,
+      offsets: offsetBuffer,
+      ids: idBuffer
+    }
+  }
+
+  this.updateBuffers = function() {
+    for (var i = 0; i < agents.length; i++) {
+      var offset = agents[i].pos
+      offsetArray[3*i] = offset[0]
+      offsetArray[3*i+1] = offset[1]
+      offsetArray[3*i+2] = offset[2]
+    }
+    GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
+    GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+  }
+
+  this.buffer = function() {
+    return sprites
+  }
+}
+},{"../objects/cone.js":195}],191:[function(require,module,exports){
 'use strict'
 
 var DEG2RAD = 3.14159265 / 180
@@ -21421,7 +21461,7 @@ var Camera = function(w, h) {
 }
 
 module.exports = Camera
-},{}],189:[function(require,module,exports){
+},{}],192:[function(require,module,exports){
 (function (process){
 var BITS = 52;
 var SCALE = 2 << 51;
@@ -42695,7 +42735,7 @@ function test(){
 }
 if(require.main === module) return test();
 }).call(this,require('_process'))
-},{"_process":3}],190:[function(require,module,exports){
+},{"_process":3}],193:[function(require,module,exports){
 'use strict';
 
 var domready = require("domready");
@@ -42850,7 +42890,7 @@ domready(function () {
   loadScene(CircleScene)
   runSimulation()
 })
-},{"./biocrowds":187,"./mygl.js":191,"./objects/cube.js":193,"./objects/plane.js":195,"./scenes/circle.js":197,"./scenes/oncoming.js":198,"./shaderprogram.js":199,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],191:[function(require,module,exports){
+},{"./biocrowds":188,"./mygl.js":194,"./objects/cube.js":196,"./objects/plane.js":198,"./scenes/circle.js":200,"./scenes/oncoming.js":201,"./shaderprogram.js":202,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],194:[function(require,module,exports){
 'use strict';
 
 var Cube = require('./objects/cube.js')
@@ -43009,7 +43049,7 @@ module.exports = function() {
     }
   }
 }
-},{"./camera.js":188,"./objects/cone.js":192,"./objects/cube.js":193,"./objects/cylinder.js":194,"./objects/plane.js":195,"./objects/triangle.js":196,"./shaderprogram.js":199,"./shaders/lambert-fs.js":200,"./shaders/lambert-vs.js":201,"./shaders/marker-fs.js":202,"./shaders/marker-vs.js":203,"./shaders/pixel-vs.js":204,"./shaders/voronoi-fs.js":207,"./shaders/voronoi-vs.js":208}],192:[function(require,module,exports){
+},{"./camera.js":191,"./objects/cone.js":195,"./objects/cube.js":196,"./objects/cylinder.js":197,"./objects/plane.js":198,"./objects/triangle.js":199,"./shaderprogram.js":202,"./shaders/lambert-fs.js":203,"./shaders/lambert-vs.js":204,"./shaders/marker-fs.js":205,"./shaders/marker-vs.js":206,"./shaders/pixel-vs.js":207,"./shaders/voronoi-fs.js":210,"./shaders/voronoi-vs.js":211}],195:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 20
@@ -43126,7 +43166,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],193:[function(require,module,exports){
+},{}],196:[function(require,module,exports){
 'use strict'
 
 var cubeVertexPositionBuffer
@@ -43265,7 +43305,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],194:[function(require,module,exports){
+},{}],197:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 20
@@ -43390,7 +43430,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],195:[function(require,module,exports){
+},{}],198:[function(require,module,exports){
 'use strict'
 
 var vertexPositionBuffer
@@ -43464,7 +43504,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],196:[function(require,module,exports){
+},{}],199:[function(require,module,exports){
 'use strict'
 
 var PI = 3.14159265
@@ -43536,7 +43576,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],197:[function(require,module,exports){
+},{}],200:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -43582,7 +43622,7 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],198:[function(require,module,exports){
+},{"onecolor":4}],201:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -43672,7 +43712,7 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],199:[function(require,module,exports){
+},{"onecolor":4}],202:[function(require,module,exports){
 'use strict';
 
 module.exports = function (gl, shaders) {
@@ -43819,7 +43859,7 @@ module.exports = function (gl, shaders) {
 
   this.init(shaders);
 }
-},{}],200:[function(require,module,exports){
+},{}],203:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -43845,7 +43885,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],201:[function(require,module,exports){
+},{}],204:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -43875,7 +43915,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],202:[function(require,module,exports){
+},{}],205:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -43892,7 +43932,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],203:[function(require,module,exports){
+},{}],206:[function(require,module,exports){
 'use strict'
 
 var src ='\
@@ -43913,7 +43953,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],204:[function(require,module,exports){
+},{}],207:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -43932,7 +43972,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],205:[function(require,module,exports){
+},{}],208:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -43947,7 +43987,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],206:[function(require,module,exports){
+},{}],209:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -43964,9 +44004,9 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],207:[function(require,module,exports){
-arguments[4][202][0].apply(exports,arguments)
-},{"dup":202}],208:[function(require,module,exports){
+},{}],210:[function(require,module,exports){
+arguments[4][205][0].apply(exports,arguments)
+},{"dup":205}],211:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -43987,4 +44027,4 @@ module.exports = {
   src: src,
   type: type
 }
-},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208]);
+},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211]);

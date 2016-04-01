@@ -1,8 +1,15 @@
 'use strict'
 
 module.exports = function(thebuffer, theoptions) {
-  var buffer = thebuffer
-  var options = theoptions
+  var buffer
+  var options
+  
+  this.init = function(thebuffer, theoptions) {
+    buffer = thebuffer
+    options = theoptions
+  }
+
+  this.init(thebuffer, theoptions)
 
   var indexOf = function(x, y) {
     return 4*(x + y * options.sizeX/options.gridSize)
