@@ -3,6 +3,7 @@
 var Cube = require('./objects/cube.js')
 var Plane = require('./objects/plane.js')
 var Cylinder = require('./objects/cylinder.js')
+var Cone = require('./objects/cone.js')
 var Triangle = require('./objects/triangle.js')
 var ShaderProgram = require('./shaderprogram.js')
 var Camera = require('./camera.js')
@@ -35,13 +36,16 @@ module.exports = function() {
       alert('Could not initialize WebGL! :(')
     }
 
-    gl.clearColor(0.2, 0.2, 0.2, 1.0)
+    gl.clearColor(1.0, 1.0, 1.0, 1.0)
     gl.enable(gl.DEPTH_TEST)
 
     Cube.create(gl)
     Plane.create(gl)
     Cylinder.create(gl)
     Triangle.create(gl)
+    Cone.create(gl)
+
+    gl.lineWidth(1.0)
     
     this.Lambert = new ShaderProgram(gl, [
       require('./shaders/lambert-vs.js'), 
@@ -51,6 +55,18 @@ module.exports = function() {
       require('./shaders/marker-vs.js'),
       require('./shaders/marker-fs.js')
     ])
+    this.VoronoiShader = new ShaderProgram(gl, [ 
+      require('./shaders/voronoi-vs.js'),
+      require('./shaders/voronoi-fs.js')
+    ])
+    this.PixelShader = new ShaderProgram(gl, [
+      require('./shaders/pixel-vs.js'),
+      require('./shaders/marker-fs.js')
+    ])
+    // this.VelocityShader = new ShaderProgram(gl, [ 
+    //   require('./shaders/voronoi-vs.js'),
+    //   require('./shaders/voronoi-fs.js')
+    // ])
 
     // SETUP MOUSE HANDLERS
     var that = this

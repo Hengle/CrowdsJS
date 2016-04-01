@@ -9,6 +9,7 @@ var Cube = require('./objects/cube.js')
 var Plane = require('./objects/plane.js')
 var BioCrowds = require('./biocrowds')
 var CircleScene = require('./scenes/circle.js')
+var OncomingScene = require('./scenes/oncoming.js')
 
 var layout = {
   root: 0,
@@ -86,14 +87,19 @@ domready(function () {
     loadScene(CircleScene)
   }
 
+  document.getElementById('oncoming-scene-btn').onclick = function() {
+    loadScene(OncomingScene)
+  }
+
   var simulationInterval
   var runSimulation = function() {
     if (biocrowds) {
       if (!running) {
         running = true
         simulationInterval = setInterval(function() {
-          biocrowds.step(1/24)
+          //biocrowds.step(1/24)
           gl.draw()
+          biocrowds.step(1/24)
         }, 1000/24)
       }
     }
@@ -142,4 +148,7 @@ domready(function () {
       resetSimulation()
     }
   }
+
+  loadScene(CircleScene)
+  runSimulation()
 })

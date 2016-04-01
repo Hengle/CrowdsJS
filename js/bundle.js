@@ -20504,13 +20504,116 @@ module.exports = Panel;
 },{"classnames":24,"react":181,"react-dom":25}],186:[function(require,module,exports){
 'use strict'
 
+module.exports = function(thebuffer, theoptions) {
+  var buffer = thebuffer
+  var options = theoptions
+
+  var indexOf = function(x, y) {
+    return 4*(x + y * options.sizeX/options.gridSize)
+  }
+
+  var colEq = function(c1, c2) {
+    return c1[0] == c2[0] && c1[1] == c2[1] && c1[2] == c2[2]
+  }
+
+  var chunkGrid = function(x, y, X, Y, cb) {
+    if (X-x <= 1 && Y-y <= 1) return
+
+    var i1 = indexOf(x,y)
+    var i2 = indexOf(X-1,y)
+    var i3 = indexOf(x,Y-1)
+    var i4 = indexOf(X-1,Y-1)
+
+    var c1 = [buffer[i1], buffer[i1+1], buffer[i1+2]]
+    var c2 = [buffer[i2], buffer[i2+1], buffer[i2+2]]
+    var c3 = [buffer[i3], buffer[i3+1], buffer[i3+2]]
+    var c4 = [buffer[i4], buffer[i4+1], buffer[i4+2]]
+
+    var xm = Math.floor((x+X)/2)
+    var ym = Math.floor((y+Y)/2)
+
+    // console.log(c1,c2,c3,c4)
+    // console.log(x,X,y,Y)
+
+    if (colEq(c1,c2) && colEq(c3,c4) && colEq(c1,c3)) {
+      // all same
+      cb(x, y, X, Y, c1)
+    } else if (colEq(c1,c2) && colEq(c3,c4) && !colEq(c1,c3)) {
+      // only vertical split
+      chunkGrid(x, y, X, ym, cb)
+      chunkGrid(x, ym, X, Y, cb)
+    } else if (colEq(c1,c3) && colEq(c2,c4) && !colEq(c1,c2)) {
+      // only horizontal split
+      chunkGrid(x, y, xm, Y, cb)
+      chunkGrid(xm, y, X, Y, cb)
+    } else if (colEq(c1,c2) && (!colEq(c1,c3) || !colEq(c2,c4))) {
+      // vertical split, split top horizontally
+      chunkGrid(x, y, X, ym, cb)
+      chunkGrid(x, ym, xm, Y, cb)
+      chunkGrid(xm, ym, X, Y, cb)
+    } else if (colEq(c3,c4) && (!colEq(c1,c3) || !colEq(c2,c4))) {
+      // vertical split, split bottom horizontally
+      chunkGrid(x, y, xm, ym, cb)
+      chunkGrid(xm, y, X, ym, cb)
+      chunkGrid(x, ym, X, Y, cb)
+    } else if (colEq(c1,c3) && (!colEq(c1,c2) || !colEq(c3,c4))) {
+      // horizontal split, split right vertically
+      chunkGrid(x, y, xm, Y, cb)
+      chunkGrid(xm, y, X, ym, cb)
+      chunkGrid(xm, ym, X, Y, cb)
+    } else if (colEq(c2,c4) && (!colEq(c1,c2) || !colEq(c3,c4))) {
+      // horizontal split, split left vertically
+      chunkGrid(x, y, xm, ym, cb)
+      chunkGrid(x, ym, xm, Y, cb)
+      chunkGrid(xm, y, X, Y, cb)
+    } else {
+      // split all
+      chunkGrid(x, y, xm, ym, cb)
+      chunkGrid(x, ym, xm, Y, cb)
+      chunkGrid(xm, y, X, ym, cb)
+      chunkGrid(xm, ym, X, Y, cb)
+    }
+  }
+
+  this.chunk = function(x, y, w, h, cb) {
+    chunkGrid(x, y, w, h, cb)
+  }
+
+  this.filterRadius = function(x, X, y, Y, r, px, py, id, cb) {
+    if (X-x <= 1 && Y-y <= 1) return
+    var point = vec2.fromValues(px, py)
+    var ll = vec2.dist(vec2.fromValues(x, y), point) < r
+    var lr = vec2.dist(vec2.fromValues(X, y), point) < r
+    var ul = vec2.dist(vec2.fromValues(x, Y), point) < r
+    var ur = vec2.dist(vec2.fromValues(X, Y), point) < r
+
+    var xm = Math.floor((x+X)/2)
+    var ym = Math.floor((y+Y)/2)
+
+    if (x > px+r || X < px-r || y > py+r || Y < py-r) {
+      return
+    } else if (ll && lr && ul && ur) {
+      return cb(x,X,y,Y, id)
+    } else {
+      this.filterRadius(xm,X,ym,Y,r,px,py,id,cb)
+      this.filterRadius(x,xm,y,ym,r,px,py,id,cb)
+      this.filterRadius(xm,X,y,ym,r,px,py,id,cb)
+      this.filterRadius(x,xm,ym,Y,r,px,py,id,cb)
+    }
+  }
+}
+},{}],187:[function(require,module,exports){
+'use strict'
+
 var Sobol = require('../lib/sobol.js')
 var sobol = new Sobol(2)
 var Cube = require('../objects/cube.js')
 var Cylinder = require('../objects/cylinder.js')
+var Cone = require('../objects/cone.js')
 var Triangle = require('../objects/triangle.js')
 var Plane = require('../objects/plane.js')
 var ShaderProgram = require('../shaderprogram.js')
+var GridChunker = require('./grid-chunk')
 
 var defaultOptions = {
   originX: -15,
@@ -20518,7 +20621,7 @@ var defaultOptions = {
   sizeX: 30,
   sizeZ: 30,
   markerDensity: 10,
-  gridSize: 1,
+  gridSize: 0.1,
   searchRadius: 3,
   rightPreference: false,
   drawMarkers: false
@@ -20541,10 +20644,11 @@ var BioCrowds = function(gl, options) {
     }
   }
 
-  var Grid = function() {
-    var gridWidth = Math.ceil(options.sizeX / options.gridSize)
-    var gridDepth = Math.ceil(options.sizeZ / options.gridSize)
+  var gridWidth = Math.ceil(options.sizeX / options.gridSize)
+  var gridDepth = Math.ceil(options.sizeZ / options.gridSize)
 
+  var Grid = function() {
+    
     var GridCell = function(x, z) {
       var cell = {
         items: [],
@@ -20629,19 +20733,42 @@ var BioCrowds = function(gl, options) {
   var markerGrid
   var agents= []
   var drawables = []
+  var voronoiFBO
+  var voronoiBuffer = new Uint8Array(gridWidth*gridDepth*4)
+  var viewproj = mat4.create()
+  var invviewproj = mat4.create()
+  var Sprite
+  var offsetBuffer
+  var offsetArray
+
+  var edgeid
+  var edgepos
+  var edgecol
 
   var bioCrowds = {
     init: function() {
       markerGrid = Grid()
 
-      var numMarkers = options.sizeX*options.sizeZ*options.markerDensity
-      for (var i = 0; i < numMarkers; i++) {
-        var vec = sobol.nextVector()
-        vec = [vec[0]*options.sizeX+options.originX, vec[1]*options.sizeZ+options.originZ]
-        var marker = Marker(vec[0], vec[1])
-        markerGrid.addItem(i, vec[0], vec[1])
-        markers.push(marker)
-      }  
+      // var numMarkers = options.sizeX*options.sizeZ*options.markerDensity
+      // for (var i = 0; i < numMarkers; i++) {
+      //   var vec = sobol.nextVector()
+      //   vec = [vec[0]*options.sizeX+options.originX, vec[1]*options.sizeZ+options.originZ]
+      //   var marker = Marker(vec[0], vec[1])
+      //   markerGrid.addItem(i, vec[0], vec[1])
+      //   markers.push(marker)
+      // }
+      // var i = 0
+      // for (var x = 0; x < options.sizeX; x+=options.gridSize) {
+      //   for (var z = 0; z < options.sizeZ; z+=options.gridSize) {
+      //     for (var a = 0; a < options.markerDensity*options.gridSize; a++) {
+      //       var xpos = x + Math.random() * options.gridSize + options.originX
+      //       var zpos = z + Math.random() * options.gridSize + options.originZ
+      //       var marker = Marker(xpos, zpos)
+      //       markerGrid.addItem(i++, xpos, zpos)
+      //       markers.push(marker)
+      //     }
+      //   }
+      // } 
 
       var planeTrans = mat4.create()
       mat4.scale(planeTrans, planeTrans, vec3.fromValues(options.sizeX, 1, options.sizeZ))
@@ -20656,7 +20783,50 @@ var BioCrowds = function(gl, options) {
       drawables.push(groundPlane)
       gl.drawables.push(groundPlane)
 
-      bioCrowds.setupMarkerBuffers()
+      // bioCrowds.setupMarkerBuffers()
+
+      var GL = gl.getGL()
+      var voronoiFBO = GL.createFramebuffer()
+      GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiFBO);
+      var rttTexture = GL.createTexture();
+      GL.bindTexture(GL.TEXTURE_2D, rttTexture);
+      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
+      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
+      GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, gridWidth, gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
+
+      var renderbuffer = GL.createRenderbuffer();
+      GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
+      GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, gridWidth, gridDepth)
+      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, rttTexture, 0)
+      GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
+
+      GL.bindFramebuffer(GL.FRAMEBUFFER, null)
+      GL.bindRenderbuffer(GL.RENDERBUFFER, null)
+      GL.bindTexture(GL.TEXTURE_2D, null)
+
+      var view = mat4.create()
+      var projection = mat4.create()
+      mat4.lookAt(view, vec3.fromValues(0,100,0), vec3.fromValues(0,0,0), vec3.fromValues(0,0,-1))
+      mat4.ortho(projection, 
+        options.originX, options.sizeX + options.originX, 
+        options.originZ, options.sizeZ + options.originZ, 
+        0.1, 200)
+      mat4.multiply(viewproj, projection, view)
+      mat4.invert(invviewproj, viewproj)
+
+
+
+      edgeid = GL.createBuffer()
+      GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, edgeid)
+      GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, null, GL.DYNAMIC_DRAW)
+
+      edgepos = GL.createBuffer()
+      GL.bindBuffer(GL.ARRAY_BUFFER, edgepos)
+      GL.bufferData(GL.ARRAY_BUFFER, null, GL.DYNAMIC_DRAW)
+
+      edgecol = GL.createBuffer()
+      GL.bindBuffer(GL.ARRAY_BUFFER, edgecol)
+      GL.bufferData(GL.ARRAY_BUFFER, null, GL.DYNAMIC_DRAW)
     },
 
     deinit: function() {
@@ -20760,19 +20930,225 @@ var BioCrowds = function(gl, options) {
         }
       }
 
+      var ids = [];
+      // var offsets = [];
+      offsetArray = new Float32Array(agents.length*3)
+
       for (var i = 0; i < agents.length; i++) {
         agents[i].done = false
         agents[i].markers = []
+        var offset = agents[i].pos
+        offsetArray[3*i] = offset[0]
+        offsetArray[3*i+1] = offset[1]
+        offsetArray[3*i+2] = offset[2]
+        // offsets.push.apply(offsets, [offset[0], offset[1], offset[2]])
+        ids.push.apply(ids, agents[i].id)
 
         var agent = agentPainter(i)
         gl.drawables.push(agent)
         drawables.push(agent)
       }
+
+      var GL = gl.getGL()
+      var cone = Cone.get()
+      offsetBuffer = GL.createBuffer()
+      GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
+      GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+      offsetBuffer.itemSize = 3
+      offsetBuffer.numItems = agents.length
+
+      var idBuffer = GL.createBuffer()
+      GL.bindBuffer(GL.ARRAY_BUFFER, idBuffer)
+      GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(ids), GL.DYNAMIC_DRAW)
+      idBuffer.itemSize = 3
+      idBuffer.numItems = agents.length
+
+      Sprite = {
+        positions: cone.positions,
+        normals: cone.normals,
+        colors: cone.colors,
+        indices: cone.indices,
+        count: cone.count,
+        drawMode: cone.drawMode,
+        offsets: offsetBuffer,
+        ids: idBuffer
+      }
     },
 
     step: function(t) {
-      console.log(options)
-      var markerIndices = []
+      var GL = gl.getGL()
+      // GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiFBO)
+      GL.clear( GL.DEPTH_BUFFER_BIT)
+      GL.viewport(0, 0, gridWidth, gridDepth)
+      gl.VoronoiShader.setViewProj(viewproj)
+      gl.VoronoiShader.draw(Sprite, true)
+      GL.readPixels(0,0,gridWidth,gridDepth, GL.RGBA, GL.UNSIGNED_BYTE, voronoiBuffer)
+      // console.log(voronoiBuffer)
+
+      for (var i = 0; i < agents.length; i++) {
+        agents[i].blocks = []
+      }
+      var edges = []
+      var edge_cols = []
+      var edge_ids = []
+      var edgeCount = 0
+      var RES = 10
+      var screenPos = vec3.create()
+      var chunker = new GridChunker(voronoiBuffer, options)
+      chunker.chunk(0,0,gridWidth,gridDepth, function(x,y,X,Y,col) {
+
+        var id = [Math.round(col[0]/255*RES), Math.round(col[1]/255*RES), Math.round(col[2]/255*RES)]
+        id = id[0] + id[1]*RES + id[2]*RES*RES
+
+        if (id < agents.length) {
+          vec3.transformMat4(screenPos, agents[id].pos, viewproj)
+          var ax = 0.5*(screenPos[0]+1)*gridWidth
+          var ay = 0.5*(screenPos[1]+1)*gridDepth
+          vec3.transformMat4(screenPos, agents[id].goal, viewproj)
+          var gx = 0.5*(screenPos[0]+1)*gridWidth
+          var gy = 0.5*(screenPos[1]+1)*gridDepth
+          
+          chunker.filterRadius(x,X,y,Y,20,ax,ay, id, function(x,X,y,Y, id) {
+
+            var evaluateWeight = function(a, b, x, z, y) {
+              var r = Math.sqrt(gx*gx+gy*gy)
+              var x2 = Math.pow(x,2)
+              var z2 = Math.pow(z,2)
+              var y2 = Math.pow(y,2)
+              var x3 = Math.pow(x,3)
+              var z3 = Math.pow(z,3)
+              var y3 = Math.pow(y,3)
+              var ax = Math.abs(x)
+              var az = Math.abs(z)
+              var ay = Math.abs(y)
+
+              var mx = -(a*y3*Math.asinh(z/ay) - a*y3*Math.asinh(x/ay) - 2*a*z3*Math.asinh(y/az) + 2*a*x3*Math.asinh(y/ax) - 2*b*Math.pow(y2+z2, 3/2) - a*z*y*Math.sqrt(y2+z2) + 2*b*Math.pow(y2+x2, 3/2) + a*x*y*Math.sqrt(y2+x2) + (3*r*x2 - 3*r*z2)*y) / (6*r)
+              var my = (2*b*y3*Math.asinh(z/ay) - 2*b*y3*Math.asinh(x/ay) - b*z3*Math.asinh(y/az) + b*x3*Math.asinh(y/ax) + 2*a*Math.pow(y2+z2, 3/2) + b*z*y*Math.sqrt(y2+z2) - 2*a*Math.pow(y2+x2, 3/2) - b*z*y*Math.sqrt(y2+x2) + (3*r*z - 3*r*x)*y2) / (6*r)
+              var w = (b*y2*Math.asinh(z/ay) - b*y2*Math.asinh(x/ay) + a*z2*Math.asinh(y/az) - a*x2*Math.asinh(y/ax) + (a*y+b*z)*Math.sqrt(y2+z2) + (-a*y-b*x)*Math.sqrt(y2+x2) + (2*r*z-2*r*x)*y) / (2*r)
+
+              return [mx, my, w]
+            }
+
+            var evaluateMarkerWeight = function(x, y) {
+              var v1 = vec2.fromValues(x-ax, y-ay)
+              var v2 = vec2.fromValues(gx-ax, gy-ay)
+              vec2.normalize(v1,v1)
+              vec2.normalize(v2,v2)
+              return 1 + vec2.dot(v1,v2)
+            }
+
+            var w1 = evaluateMarkerWeight(x, y)
+            var w2 = evaluateMarkerWeight(X, y)
+            var w3 = evaluateMarkerWeight(x, Y)
+            var w4 = evaluateMarkerWeight(X, Y)
+            var W = w1+w2+w3+w4
+
+            var pos = vec2.fromValues(
+              (x-ax)*w1/W + (X-ax)*w2/W + (x-ax)*w3/W + (X-ax)*w4/W, 
+              (y-ay)*w1/W + (y-ay)*w2/W + (Y-ay)*w3/W + (Y-ay)*w4/W)
+
+            agents[id].blocks.push({
+              pos: pos, 
+              weight: W*(X-x)*(Y-y)
+            })
+
+            var l = edgeCount
+            edge_ids.push.apply(edge_ids, [l,l+1, l+1,l+2, l+2,l+3, l+3,l])
+            var nx = x / gridWidth * 2 - 1
+            var nX = X / gridWidth * 2 - 1
+            var ny = y / gridDepth * 2 - 1
+            var nY = Y / gridDepth * 2 - 1
+            edges.push.apply(edges,[
+              nx,ny,0.5,1,
+              nX,ny,0.5,1,
+              nX,nY,0.5,1,
+              nx,nY,0.5,1
+            ])
+            edgeCount += 4
+            var r = agents[id].col[0]
+            var g = agents[id].col[1]
+            var b = agents[id].col[2]
+ 
+            edge_cols.push.apply(edge_cols, [
+              r, g, b, 1,
+              r, g, b, 1,
+              r, g, b, 1,
+              r, g, b, 1
+            ])
+
+          })          
+          //agents[id].blocks.push([])
+          
+          // var v1 = evaluateWeight(gx-ax, gy-ay, x-ax, X-ax, y-ay)
+          // var v2 = evaluateWeight(gx-ax, gy-ay, x-ax, X-ax, Y-ay)
+
+          // agents[id].blocks.push([ v2[0]-v1[0], v2[1]-v1[1], v2[2]-v1[2] ])
+        }
+      })
+
+      // edge_ids = [0,1,1,2]
+      // edges = [-1,0,0,1, 0,-1,0,1, 1,1,0,1]
+      // edge_cols = [1,0,0,1, 0,1,0,1, 0,0,1,1]
+
+      // console.log(edge_cols)
+
+      GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, edgeid)
+      GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16Array(edge_ids), GL.DYNAMIC_DRAW)
+
+      GL.bindBuffer(GL.ARRAY_BUFFER, edgepos)
+      GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(edges), GL.DYNAMIC_DRAW)
+
+      GL.bindBuffer(GL.ARRAY_BUFFER, edgecol)
+      GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(edge_cols), GL.DYNAMIC_DRAW)
+
+      var bufferData = {
+        positions: edgepos,
+        colors: edgecol,
+        indices: edgeid,
+        drawMode: GL.LINES,
+        count: edge_ids.length
+      }
+      GL.clear( GL.DEPTH_BUFFER_BIT)
+      // GL.viewport(0,0,GL.viewportWidth, GL.viewportHeight)
+      GL.viewport(gridWidth, 0, gridWidth, gridDepth)
+      gl.PixelShader.draw(bufferData)
+
+      for (var i = 0; i < agents.length; i++) {
+        var totalW = 0
+        var mvec = vec2.create()
+
+        for (var j = 0; j < agents[i].blocks.length; j++) {
+          totalW += agents[i].blocks[j].weight
+        }
+        // console.log(totalW)
+        for (var j = 0; j < agents[i].blocks.length; j++) {
+          vec2.scaleAndAdd(mvec, mvec, agents[i].blocks[j].pos, agents[i].blocks[j].weight / totalW)
+        }
+
+        screenPos = vec3.fromValues(2*mvec[0]/gridWidth, 2*mvec[1]/gridDepth, 0)
+        vec3.transformMat4(screenPos, screenPos, invviewproj)
+        screenPos[1] = 0
+
+        agents[i].vel = screenPos
+        agents[i].forward = screenPos
+      }
+
+      for (var i = 0; i < agents.length; i++) {
+        if (!agents[i].done) {   
+          vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
+        }
+
+        var offset = agents[i].pos
+        offsetArray[3*i] = offset[0]
+        offsetArray[3*i+1] = offset[1]
+        offsetArray[3*i+2] = offset[2]
+      }
+
+      GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
+      GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+
+
+      /*var markerIndices = []
       var agentGrid = Grid()
       var markerGridCells = new Set()
 
@@ -20841,7 +21217,7 @@ var BioCrowds = function(gl, options) {
             markers[agents[i].markers[j]].weight = weight
             totalWeight += weight
 
-            if (vec3.length(goalVec) <= 0.1) {
+            if (vec3.length(goalVec) <= 0.5) {
               agents[i].done = true
             }
           }
@@ -20859,7 +21235,16 @@ var BioCrowds = function(gl, options) {
 
           vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
         }
-      }
+      }*/
+
+      // GL.bindFramebuffer(GL.FRAMEBUFFER, null)
+      // GL.viewport(0, 0, GL.viewportWidth, GL.viewportHeight)
+      // // GL.viewport(0, 0, gridWidth, gridDepth)
+      // GL.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
+      // gl.VoronoiShader.setViewProj(viewproj)
+      // gl.VoronoiShader.draw(Sprite, true)
+
+
     },
 
     getOptions: function() {
@@ -20870,7 +21255,7 @@ var BioCrowds = function(gl, options) {
 }
 
 module.exports = BioCrowds
-},{"../lib/sobol.js":188,"../objects/cube.js":191,"../objects/cylinder.js":192,"../objects/plane.js":193,"../objects/triangle.js":194,"../shaderprogram.js":196}],187:[function(require,module,exports){
+},{"../lib/sobol.js":189,"../objects/cone.js":192,"../objects/cube.js":193,"../objects/cylinder.js":194,"../objects/plane.js":195,"../objects/triangle.js":196,"../shaderprogram.js":199,"./grid-chunk":186}],188:[function(require,module,exports){
 'use strict'
 
 var DEG2RAD = 3.14159265 / 180
@@ -21001,7 +21386,7 @@ var Camera = function(w, h) {
 }
 
 module.exports = Camera
-},{}],188:[function(require,module,exports){
+},{}],189:[function(require,module,exports){
 (function (process){
 var BITS = 52;
 var SCALE = 2 << 51;
@@ -42275,7 +42660,7 @@ function test(){
 }
 if(require.main === module) return test();
 }).call(this,require('_process'))
-},{"_process":3}],189:[function(require,module,exports){
+},{"_process":3}],190:[function(require,module,exports){
 'use strict';
 
 var domready = require("domready");
@@ -42287,6 +42672,7 @@ var Cube = require('./objects/cube.js')
 var Plane = require('./objects/plane.js')
 var BioCrowds = require('./biocrowds')
 var CircleScene = require('./scenes/circle.js')
+var OncomingScene = require('./scenes/oncoming.js')
 
 var layout = {
   root: 0,
@@ -42364,14 +42750,19 @@ domready(function () {
     loadScene(CircleScene)
   }
 
+  document.getElementById('oncoming-scene-btn').onclick = function() {
+    loadScene(OncomingScene)
+  }
+
   var simulationInterval
   var runSimulation = function() {
     if (biocrowds) {
       if (!running) {
         running = true
         simulationInterval = setInterval(function() {
-          biocrowds.step(1/24)
+          //biocrowds.step(1/24)
           gl.draw()
+          biocrowds.step(1/24)
         }, 1000/24)
       }
     }
@@ -42420,13 +42811,17 @@ domready(function () {
       resetSimulation()
     }
   }
+
+  loadScene(CircleScene)
+  runSimulation()
 })
-},{"./biocrowds":186,"./mygl.js":190,"./objects/cube.js":191,"./objects/plane.js":193,"./scenes/circle.js":195,"./shaderprogram.js":196,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],190:[function(require,module,exports){
+},{"./biocrowds":187,"./mygl.js":191,"./objects/cube.js":193,"./objects/plane.js":195,"./scenes/circle.js":197,"./scenes/oncoming.js":198,"./shaderprogram.js":199,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],191:[function(require,module,exports){
 'use strict';
 
 var Cube = require('./objects/cube.js')
 var Plane = require('./objects/plane.js')
 var Cylinder = require('./objects/cylinder.js')
+var Cone = require('./objects/cone.js')
 var Triangle = require('./objects/triangle.js')
 var ShaderProgram = require('./shaderprogram.js')
 var Camera = require('./camera.js')
@@ -42459,13 +42854,16 @@ module.exports = function() {
       alert('Could not initialize WebGL! :(')
     }
 
-    gl.clearColor(0.2, 0.2, 0.2, 1.0)
+    gl.clearColor(1.0, 1.0, 1.0, 1.0)
     gl.enable(gl.DEPTH_TEST)
 
     Cube.create(gl)
     Plane.create(gl)
     Cylinder.create(gl)
     Triangle.create(gl)
+    Cone.create(gl)
+
+    gl.lineWidth(1.0)
     
     this.Lambert = new ShaderProgram(gl, [
       require('./shaders/lambert-vs.js'), 
@@ -42475,6 +42873,18 @@ module.exports = function() {
       require('./shaders/marker-vs.js'),
       require('./shaders/marker-fs.js')
     ])
+    this.VoronoiShader = new ShaderProgram(gl, [ 
+      require('./shaders/voronoi-vs.js'),
+      require('./shaders/voronoi-fs.js')
+    ])
+    this.PixelShader = new ShaderProgram(gl, [
+      require('./shaders/pixel-vs.js'),
+      require('./shaders/marker-fs.js')
+    ])
+    // this.VelocityShader = new ShaderProgram(gl, [ 
+    //   require('./shaders/voronoi-vs.js'),
+    //   require('./shaders/voronoi-fs.js')
+    // ])
 
     // SETUP MOUSE HANDLERS
     var that = this
@@ -42564,7 +42974,124 @@ module.exports = function() {
     }
   }
 }
-},{"./camera.js":187,"./objects/cube.js":191,"./objects/cylinder.js":192,"./objects/plane.js":193,"./objects/triangle.js":194,"./shaderprogram.js":196,"./shaders/lambert-fs.js":197,"./shaders/lambert-vs.js":198,"./shaders/marker-fs.js":199,"./shaders/marker-vs.js":200}],191:[function(require,module,exports){
+},{"./camera.js":188,"./objects/cone.js":192,"./objects/cube.js":193,"./objects/cylinder.js":194,"./objects/plane.js":195,"./objects/triangle.js":196,"./shaderprogram.js":199,"./shaders/lambert-fs.js":200,"./shaders/lambert-vs.js":201,"./shaders/marker-fs.js":202,"./shaders/marker-vs.js":203,"./shaders/pixel-vs.js":204,"./shaders/voronoi-fs.js":207,"./shaders/voronoi-vs.js":208}],192:[function(require,module,exports){
+'use strict'
+
+var CYL_COUNT = 20
+var PI = 3.14159265
+var R = 100
+var H = 10
+
+var vertices = []
+var normals = []
+var indices = []
+var colors = []
+
+// top barrel
+for (var i = 0; i < CYL_COUNT; i++) {
+  var theta = 2*PI*i / CYL_COUNT
+  var x = Math.cos(theta)
+  var z = Math.sin(theta)
+  // vertices.push.apply(vertices, [R*x, H, R*z, 1])
+  // normals.push.apply(normals, [x, 0, z, 0])
+  vertices.push.apply(vertices, [0, 0, 0, 1])
+  normals.push.apply(normals, [x, 0, z, 0])
+  colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
+}
+
+// bottom barrel
+for (var i = 0; i < CYL_COUNT; i++) {
+  var theta = 2*PI*i / CYL_COUNT
+  var x = Math.cos(theta)
+  var z = Math.sin(theta)
+  vertices.push.apply(vertices, [R*x, -H, R*z, 1])
+  normals.push.apply(normals, [x, 0, z, 0])
+  colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
+}
+
+// bottom face
+for (var i = 0; i < CYL_COUNT; i++) {
+  var theta = 2*PI*i / CYL_COUNT
+  var x = Math.cos(theta)
+  var z = Math.sin(theta)
+  vertices.push.apply(vertices, [R*x, -H, R*z, 1])
+  normals.push.apply(normals, [0, -1, 0, 0])
+  colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
+}
+
+// barrel indices
+for (var i = 0; i < CYL_COUNT; i++) {
+  var idx1 = i
+  var idx2 = i+1
+  var idx3 = i+CYL_COUNT
+  var idx4 = i+CYL_COUNT+1
+
+  if (idx2 >= CYL_COUNT) {
+    idx2 -= CYL_COUNT
+  }
+
+  if (idx4 >= 2*CYL_COUNT) {
+    idx4 -= CYL_COUNT
+  }
+
+  indices.push.apply(indices, [idx1, idx2, idx3])
+  indices.push.apply(indices, [idx2, idx3, idx4])
+}
+
+for (var i = 2*CYL_COUNT + 1; i < 3*CYL_COUNT - 1; i++) {
+  indices.push.apply(indices, [2*CYL_COUNT, i, i+1])
+}
+
+// for (var i = 3*CYL_COUNT + 1; i < 4*CYL_COUNT - 1; i++) {
+//   indices.push.apply(indices, [3*CYL_COUNT, i, i+1])
+// }
+
+var Geo = {}
+var vertexPositionBuffer
+var vertexColorBuffer
+var vertexNormalBuffer
+var vertexIndexBuffer
+
+module.exports = {
+
+  get: function() {
+    return Geo
+  },
+
+  create: function(gl) {
+    vertexPositionBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW)
+    vertexPositionBuffer.itemSize = 4
+    vertexPositionBuffer.numItems = 3*CYL_COUNT
+
+    vertexNormalBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexNormalBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW)
+    vertexNormalBuffer.itemSize = 4
+    vertexNormalBuffer.numItems = 3*CYL_COUNT
+
+    vertexColorBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
+    vertexColorBuffer.itemSize = 4
+    vertexColorBuffer.numItems = 3*CYL_COUNT
+
+    vertexIndexBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vertexIndexBuffer)
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW)
+    vertexIndexBuffer.itemSize = 1
+    vertexIndexBuffer.numItems = CYL_COUNT*2*3 + (CYL_COUNT-2)*3
+
+    Geo.positions = vertexPositionBuffer
+    Geo.normals = vertexNormalBuffer
+    Geo.colors = vertexColorBuffer
+    Geo.indices = vertexIndexBuffer
+    Geo.count = CYL_COUNT*2*3 + (CYL_COUNT-2)*3
+    Geo.drawMode = gl.TRIANGLES
+  }
+}
+},{}],193:[function(require,module,exports){
 'use strict'
 
 var cubeVertexPositionBuffer
@@ -42703,7 +43230,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],192:[function(require,module,exports){
+},{}],194:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 20
@@ -42828,7 +43355,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],193:[function(require,module,exports){
+},{}],195:[function(require,module,exports){
 'use strict'
 
 var vertexPositionBuffer
@@ -42902,7 +43429,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],194:[function(require,module,exports){
+},{}],196:[function(require,module,exports){
 'use strict'
 
 var PI = 3.14159265
@@ -42974,15 +43501,18 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],195:[function(require,module,exports){
+},{}],197:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
 
+var RES = 10//Math.ceil(Math.pow(20, 0.3334))//10
+
 var scene = {
   options: function() {
     return {
-      rightPreference: true
+      rightPreference: true,
+      markerDensity: 24
     }
   },
 
@@ -42992,15 +43522,23 @@ var scene = {
     scene.agents = []
     var PI = 3.14159256
     var R = 10
+    var ID = 0;
     for (var a = 0; a < 2*PI; a += 2*PI/20) {
       var hue = a / (2*PI) * 360
       var col = Color('hsv(' + hue + ', 100, 100)')
+      
+      var idr = ID % RES
+      var idg = Math.floor(ID / RES) % RES
+      var idb = Math.floor(ID / (RES*RES))
+      ++ID
+
       scene.agents.push({
         pos: vec3.fromValues(R * Math.cos(a), 0, R * Math.sin(a)),
         forward: vec3.fromValues(Math.cos(a + PI), 0, Math.sin(a + PI)),
         col: vec4.fromValues(col.red(),col.green(),col.blue(),1),
         vel: vec3.create(),
-        goal: vec3.fromValues(R * Math.cos(a + PI), 0, R * Math.sin(a + PI))
+        goal: vec3.fromValues(R * Math.cos(a + PI), 0, R * Math.sin(a + PI)),
+        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
       })
     }
   }
@@ -43008,7 +43546,97 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],196:[function(require,module,exports){
+},{"onecolor":4}],198:[function(require,module,exports){
+'use strict'
+
+var Color = require('onecolor') 
+
+var RES = 10
+
+var scene = {
+  options: function() {
+    return {
+      rightPreference: true,
+      searchRadius: 2,
+      originX: -12,
+      originZ: -12,
+      sizeX: 24,
+      sizeZ: 24,
+      markerDensity: 24
+    }
+  },
+
+  agents: [],
+
+  create: function() {
+    var ID = 0;
+    scene.agents = []
+
+
+
+    for (var i = -7.5; i < 7.5; i+=1.5) {
+      var idr = ID % RES
+      var idg = Math.floor(ID / RES) % RES
+      var idb = Math.floor(ID / (RES*RES))
+      ++ID
+
+      scene.agents.push({
+        pos: vec3.fromValues(i, 0, -10),
+        forward: vec3.fromValues(0,0,1),
+        col: vec4.fromValues(1,0,0,1),
+        vel: vec3.create(),
+        goal: vec3.fromValues(0, 0, 10),
+        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+      })
+
+      idr = ID % RES
+      idg = Math.floor(ID / RES) % RES
+      idb = Math.floor(ID / (RES*RES))
+      ++ID
+
+      scene.agents.push({
+        pos: vec3.fromValues(i, 0, -8),
+        forward: vec3.fromValues(0,0,1),
+        col: vec4.fromValues(1,0,0,1),
+        vel: vec3.create(),
+        goal: vec3.fromValues(0, 0, 10),
+        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+      })
+
+      idr = ID % RES
+      idg = Math.floor(ID / RES) % RES
+      idb = Math.floor(ID / (RES*RES))
+      ++ID
+
+      scene.agents.push({
+        pos: vec3.fromValues(i, 0, 10),
+        forward: vec3.fromValues(0,0,-1),
+        col: vec4.fromValues(0,0,1,1),
+        vel: vec3.create(),
+        goal: vec3.fromValues(0, 0, -10),
+        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+      })
+
+      idr = ID % RES
+      idg = Math.floor(ID / RES) % RES
+      idb = Math.floor(ID / (RES*RES))
+      ++ID
+
+      scene.agents.push({
+        pos: vec3.fromValues(i, 0, 8),
+        forward: vec3.fromValues(0,0,-1),
+        col: vec4.fromValues(0,0,1,1),
+        vel: vec3.create(),
+        goal: vec3.fromValues(0, 0, -10),
+        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+      })
+      
+    }
+  }
+}
+
+module.exports = scene
+},{"onecolor":4}],199:[function(require,module,exports){
 'use strict';
 
 module.exports = function (gl, shaders) {
@@ -43056,9 +43684,12 @@ module.exports = function (gl, shaders) {
     shaderProgram.unifModel = gl.getUniformLocation(shaderProgram, "u_Model");
     shaderProgram.unifInvTrans = gl.getUniformLocation(shaderProgram, "u_InvTrans");
     shaderProgram.unifCol = gl.getUniformLocation(shaderProgram, 'u_Color');
+
+    shaderProgram.attrOffset = gl.getAttribLocation(shaderProgram, "vs_offset")
+    shaderProgram.attrId = gl.getAttribLocation(shaderProgram, "vs_id")
   }
 
-  this.draw = function(obj) {
+  this.draw = function(obj, divisor) {
     gl.useProgram(shaderProgram);
 
     if (shaderProgram.attrPos != -1 && obj.positions) {
@@ -43074,10 +43705,34 @@ module.exports = function (gl, shaders) {
     if (shaderProgram.attrCol != -1 && obj.colors) {
       gl.bindBuffer(gl.ARRAY_BUFFER, obj.colors)
       gl.enableVertexAttribArray(shaderProgram.attrCol);
-      gl.vertexAttribPointer(shaderProgram.attrCol, 4, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(shaderProgram.attrCol, 4, gl.FLOAT, true, 0, 0);
     }
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, obj.indices);
-    gl.drawElements(obj.drawMode, obj.count, gl.UNSIGNED_SHORT, 0);
+
+    var ext;
+    if (divisor) {
+      ext = gl.getExtension("ANGLE_instanced_arrays");
+      
+      if (shaderProgram.attrOffset != -1 && obj.offsets) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, obj.offsets)
+        gl.enableVertexAttribArray(shaderProgram.attrOffset);
+        gl.vertexAttribPointer(shaderProgram.attrOffset, 3, gl.FLOAT, false, 0, 0);
+        ext.vertexAttribDivisorANGLE(shaderProgram.attrOffset, 1);
+      }
+      if (shaderProgram.attrId != -1 && obj.ids) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, obj.ids)
+        gl.enableVertexAttribArray(shaderProgram.attrId);
+        gl.vertexAttribPointer(shaderProgram.attrId, 3, gl.FLOAT, false, 0, 0); 
+        ext.vertexAttribDivisorANGLE(shaderProgram.attrId, 1);
+      }
+    }
+
+    if (divisor) {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, obj.indices);
+      ext.drawElementsInstancedANGLE(obj.drawMode, obj.count, gl.UNSIGNED_SHORT, 0, obj.ids.numItems);
+    } else {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, obj.indices);
+      gl.drawElements(obj.drawMode, obj.count, gl.UNSIGNED_SHORT, 0);
+    }
 
     if (shaderProgram.attrPos != -1) {
       gl.disableVertexAttribArray(shaderProgram.attrPos)
@@ -43087,6 +43742,14 @@ module.exports = function (gl, shaders) {
     }
     if (shaderProgram.attrCol != -1) {
       gl.disableVertexAttribArray(shaderProgram.attrCol)
+    }
+    if (divisor) {
+      if (shaderProgram.attrOffset != -1) {
+        gl.disableVertexAttribArray(shaderProgram.attrOffset)
+      }
+      if (shaderProgram.attrId != -1) {
+        gl.disableVertexAttribArray(shaderProgram.attrId)
+      }
     }
   }
 
@@ -43120,7 +43783,7 @@ module.exports = function (gl, shaders) {
 
   this.init(shaders);
 }
-},{}],197:[function(require,module,exports){
+},{}],200:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -43146,7 +43809,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],198:[function(require,module,exports){
+},{}],201:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -43176,7 +43839,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],199:[function(require,module,exports){
+},{}],202:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -43193,7 +43856,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],200:[function(require,module,exports){
+},{}],203:[function(require,module,exports){
 'use strict'
 
 var src ='\
@@ -43214,4 +43877,78 @@ module.exports = {
   src: src,
   type: type
 }
-},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200]);
+},{}],204:[function(require,module,exports){
+'use strict'
+
+var src = '\
+attribute vec4 vs_pos;\
+attribute vec4 vs_col;\
+varying vec4 fs_col;\
+void main(void) {\
+  fs_col = vs_col;\
+  gl_Position = vs_pos;\
+}\
+'
+
+var type = 'VERT'
+
+module.exports = {
+  src: src,
+  type: type
+}
+},{}],205:[function(require,module,exports){
+'use strict'
+
+var src = '\
+void main(void) {\
+  gl_FragColor = vec4(1,1,1,1);\
+}\
+'
+
+var type = 'FRAG'
+
+module.exports = {
+  src: src,
+  type: type
+}
+},{}],206:[function(require,module,exports){
+'use strict'
+
+var src = '\
+attribute vec4 vs_pos;\
+uniform mat4 u_ViewProj;\
+void main(void) {\
+  gl_Position = u_ViewProj * vs_pos;\
+}\
+'
+
+var type = 'VERT'
+
+module.exports = {
+  src: src,
+  type: type
+}
+},{}],207:[function(require,module,exports){
+arguments[4][202][0].apply(exports,arguments)
+},{"dup":202}],208:[function(require,module,exports){
+'use strict'
+
+var src = '\
+attribute vec4 vs_pos;\
+attribute vec3 vs_offset;\
+attribute vec3 vs_id;\
+varying vec4 fs_col;\
+uniform mat4 u_ViewProj;\
+void main(void) {\
+  fs_col = vec4(vs_id, 1);\
+  gl_Position = u_ViewProj * (vs_pos + vec4(vs_offset, 0));\
+}\
+'
+
+var type = 'VERT'
+
+module.exports = {
+  src: src,
+  type: type
+}
+},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208]);

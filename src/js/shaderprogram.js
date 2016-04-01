@@ -45,9 +45,12 @@ module.exports = function (gl, shaders) {
     shaderProgram.unifModel = gl.getUniformLocation(shaderProgram, "u_Model");
     shaderProgram.unifInvTrans = gl.getUniformLocation(shaderProgram, "u_InvTrans");
     shaderProgram.unifCol = gl.getUniformLocation(shaderProgram, 'u_Color');
+
+    shaderProgram.attrOffset = gl.getAttribLocation(shaderProgram, "vs_offset")
+    shaderProgram.attrId = gl.getAttribLocation(shaderProgram, "vs_id")
   }
 
-  this.draw = function(obj) {
+  this.draw = function(obj, divisor) {
     gl.useProgram(shaderProgram);
 
     if (shaderProgram.attrPos != -1 && obj.positions) {
@@ -63,10 +66,34 @@ module.exports = function (gl, shaders) {
     if (shaderProgram.attrCol != -1 && obj.colors) {
       gl.bindBuffer(gl.ARRAY_BUFFER, obj.colors)
       gl.enableVertexAttribArray(shaderProgram.attrCol);
-      gl.vertexAttribPointer(shaderProgram.attrCol, 4, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(shaderProgram.attrCol, 4, gl.FLOAT, true, 0, 0);
     }
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, obj.indices);
-    gl.drawElements(obj.drawMode, obj.count, gl.UNSIGNED_SHORT, 0);
+
+    var ext;
+    if (divisor) {
+      ext = gl.getExtension("ANGLE_instanced_arrays");
+      
+      if (shaderProgram.attrOffset != -1 && obj.offsets) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, obj.offsets)
+        gl.enableVertexAttribArray(shaderProgram.attrOffset);
+        gl.vertexAttribPointer(shaderProgram.attrOffset, 3, gl.FLOAT, false, 0, 0);
+        ext.vertexAttribDivisorANGLE(shaderProgram.attrOffset, 1);
+      }
+      if (shaderProgram.attrId != -1 && obj.ids) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, obj.ids)
+        gl.enableVertexAttribArray(shaderProgram.attrId);
+        gl.vertexAttribPointer(shaderProgram.attrId, 3, gl.FLOAT, false, 0, 0); 
+        ext.vertexAttribDivisorANGLE(shaderProgram.attrId, 1);
+      }
+    }
+
+    if (divisor) {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, obj.indices);
+      ext.drawElementsInstancedANGLE(obj.drawMode, obj.count, gl.UNSIGNED_SHORT, 0, obj.ids.numItems);
+    } else {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, obj.indices);
+      gl.drawElements(obj.drawMode, obj.count, gl.UNSIGNED_SHORT, 0);
+    }
 
     if (shaderProgram.attrPos != -1) {
       gl.disableVertexAttribArray(shaderProgram.attrPos)
@@ -76,6 +103,14 @@ module.exports = function (gl, shaders) {
     }
     if (shaderProgram.attrCol != -1) {
       gl.disableVertexAttribArray(shaderProgram.attrCol)
+    }
+    if (divisor) {
+      if (shaderProgram.attrOffset != -1) {
+        gl.disableVertexAttribArray(shaderProgram.attrOffset)
+      }
+      if (shaderProgram.attrId != -1) {
+        gl.disableVertexAttribArray(shaderProgram.attrId)
+      }
     }
   }
 
