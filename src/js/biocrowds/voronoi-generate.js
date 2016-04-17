@@ -23,6 +23,8 @@ module.exports = function(GL, projector, options) {
 
   var offsetArray
   var offsetBuffer
+  var velocityArray
+  var velocityBuffer
   var sprites
   var agents
   this.initAgentBuffers = function(theagents) {
@@ -30,12 +32,18 @@ module.exports = function(GL, projector, options) {
 
     var ids = []
     offsetArray = new Float32Array(agents.length*3)
+    velocityArray = new Float32Array(agents.length*3)
 
     for (var i = 0; i < agents.length; i++) {
       var offset = agents[i].pos
       offsetArray[3*i] = offset[0]
       offsetArray[3*i+1] = offset[1]
       offsetArray[3*i+2] = offset[2]
+
+      offset = agents[i].forward
+      velocityArray[3*i] = offset[0]
+      velocityArray[3*i+1] = offset[1]
+      velocityArray[3*i+2] = offset[2]
 
       ids.push.apply(ids, agents[i].id)
     }
@@ -44,6 +52,12 @@ module.exports = function(GL, projector, options) {
     offsetBuffer = GL.createBuffer()
     GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
     GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+    offsetBuffer.itemSize = 3
+    offsetBuffer.numItems = agents.length
+
+    velocityBuffer = GL.createBuffer()
+    GL.bindBuffer(GL.ARRAY_BUFFER, velocityBuffer)
+    GL.bufferData(GL.ARRAY_BUFFER, velocityArray, GL.DYNAMIC_DRAW)
     offsetBuffer.itemSize = 3
     offsetBuffer.numItems = agents.length
 
@@ -61,7 +75,8 @@ module.exports = function(GL, projector, options) {
       count: cone.count,
       drawMode: cone.drawMode,
       offsets: offsetBuffer,
-      ids: idBuffer
+      ids: idBuffer,
+      velocities: velocityBuffer
     }
   }
 
@@ -71,9 +86,17 @@ module.exports = function(GL, projector, options) {
       offsetArray[3*i] = offset[0]
       offsetArray[3*i+1] = offset[1]
       offsetArray[3*i+2] = offset[2]
+
+      offset = agents[i].forward
+      velocityArray[3*i] = offset[0]
+      velocityArray[3*i+1] = offset[1]
+      velocityArray[3*i+2] = offset[2]
     }
     GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
     GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+
+    GL.bindBuffer(GL.ARRAY_BUFFER, velocityBuffer)
+    GL.bufferData(GL.ARRAY_BUFFER, velocityArray, GL.DYNAMIC_DRAW)
   }
 
   this.buffer = function() {

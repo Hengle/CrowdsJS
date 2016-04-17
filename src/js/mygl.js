@@ -7,6 +7,7 @@ var Cone = require('./objects/cone.js')
 var Triangle = require('./objects/triangle.js')
 var ShaderProgram = require('./shaderprogram.js')
 var Camera = require('./camera.js')
+var GL = require('./gl.js')
 
 module.exports = function() {
   var gl;
@@ -21,10 +22,11 @@ module.exports = function() {
   this.init = function(canvas) {
     this.canvas = canvas
     try {
-      gl = canvas.getContext("experimental-webgl", {
+      GL.set(canvas.getContext("experimental-webgl", {
         alpha: true,
         antialias: true
-      })
+      }))
+      gl = GL.get()
       gl.viewportWidth = canvas.width
       gl.viewportHeight = canvas.height
       cam = new Camera(gl.viewportWidth, gl.viewportHeight)
@@ -36,7 +38,6 @@ module.exports = function() {
       alert('Could not initialize WebGL! :(')
     }
 
-    gl.clearColor(1.0, 1.0, 1.0, 1.0)
     gl.enable(gl.DEPTH_TEST)
 
     Cube.create(gl)
@@ -63,10 +64,14 @@ module.exports = function() {
       require('./shaders/pixel-vs.js'),
       require('./shaders/marker-fs.js')
     ])
-    // this.VelocityShader = new ShaderProgram(gl, [ 
-    //   require('./shaders/voronoi-vs.js'),
-    //   require('./shaders/voronoi-fs.js')
-    // ])
+    this.VelocityShader = new ShaderProgram(gl, [ 
+      require('./shaders/velocity-vs.js'),
+      require('./shaders/velocity-fs.js')
+    ])
+    this.TestShader = new ShaderProgram(gl, [ 
+      require('./shaders/test-vs.js'),
+      require('./shaders/test-fs.js')
+    ])
 
     // SETUP MOUSE HANDLERS
     var that = this
@@ -128,8 +133,9 @@ module.exports = function() {
   }
 
   this.draw = function () {
-    gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.clearColor(0.2, 0.2, 0.2, 1.0)
+    gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight)
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
     var viewProj = mat4.create();
     cam.viewProj(viewProj);

@@ -1,6 +1,6 @@
 'use strict'
 
-var CYL_COUNT = 20
+var CYL_COUNT = 100
 var PI = 3.14159265
 var R = 100
 var H = 10

@@ -9,10 +9,10 @@ var scene = {
     return {
       rightPreference: true,
       searchRadius: 2,
-      originX: -12,
-      originZ: -12,
-      sizeX: 24,
-      sizeZ: 24,
+      originX: -16,
+      originZ: -16,
+      sizeX: 32,
+      sizeZ: 32,
       markerDensity: 24
     }
   },

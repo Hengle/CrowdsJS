@@ -11,14 +11,15 @@ var ShaderProgram = require('../shaderprogram.js')
 var BlockGenerator = require('./block-generate')
 var VoronoiGenerator = require('./voronoi-generate')
 var Projector = require('./projector')
+var VelocityCalculator = require('./velocity-calculate')
 
 var defaultOptions = {
-  originX: -15,
-  originZ: -15,
-  sizeX: 30,
-  sizeZ: 30,
+  originX: -16,
+  originZ: -16,
+  sizeX: 32,
+  sizeZ: 32,
   markerDensity: 10,
-  gridSize: 0.1,
+  gridSize: 0.125,
   searchRadius: 3,
   rightPreference: false,
   drawMarkers: false
@@ -133,11 +134,15 @@ var BioCrowds = function(gl, options) {
   var agents= []
   var drawables = []
 
-  var voronoiBuffer = new Uint8Array(gridWidth*gridDepth*4)
+  var voronoiBuffer = new Uint8Array(options.gridWidth*options.gridDepth*4)
 
   var projector
   var blockGenerator
   var voronoiGenerator
+  var velocityCalculator
+  var voronoi_texture
+  var voronoi_fbo
+  var velocity_fbo
 
   var bioCrowds = {
     init: function() {
@@ -147,26 +152,7 @@ var BioCrowds = function(gl, options) {
       projector = new Projector(options)
       blockGenerator = new BlockGenerator(GL, projector, options)
       voronoiGenerator = new VoronoiGenerator(GL, projector, options)
-      // var numMarkers = options.sizeX*options.sizeZ*options.markerDensity
-      // for (var i = 0; i < numMarkers; i++) {
-      //   var vec = sobol.nextVector()
-      //   vec = [vec[0]*options.sizeX+options.originX, vec[1]*options.sizeZ+options.originZ]
-      //   var marker = Marker(vec[0], vec[1])
-      //   markerGrid.addItem(i, vec[0], vec[1])
-      //   markers.push(marker)
-      // }
-      // var i = 0
-      // for (var x = 0; x < options.sizeX; x+=options.gridSize) {
-      //   for (var z = 0; z < options.sizeZ; z+=options.gridSize) {
-      //     for (var a = 0; a < options.markerDensity*options.gridSize; a++) {
-      //       var xpos = x + Math.random() * options.gridSize + options.originX
-      //       var zpos = z + Math.random() * options.gridSize + options.originZ
-      //       var marker = Marker(xpos, zpos)
-      //       markerGrid.addItem(i++, xpos, zpos)
-      //       markers.push(marker)
-      //     }
-      //   }
-      // } 
+      velocityCalculator = new VelocityCalculator(options)
 
       var planeTrans = mat4.create()
       mat4.scale(planeTrans, planeTrans, vec3.fromValues(options.sizeX, 1, options.sizeZ))
@@ -180,6 +166,53 @@ var BioCrowds = function(gl, options) {
       }
       drawables.push(groundPlane)
       gl.drawables.push(groundPlane)
+
+      voronoi_texture = GL.createTexture()
+      GL.bindTexture(GL.TEXTURE_2D, voronoi_texture)
+      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
+      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
+
+      GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, options.gridWidth, options.gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
+
+      voronoi_fbo = GL.createFramebuffer()
+      GL.bindFramebuffer(GL.FRAMEBUFFER, voronoi_fbo)
+
+      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, voronoi_texture, 0)
+
+      var renderbuffer = GL.createRenderbuffer();
+      GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
+      GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
+
+      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, voronoi_texture, 0)
+      GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
+
+      // ---------------------------------------------------------
+
+      var velocity_texture = GL.createTexture()
+
+      GL.bindTexture(GL.TEXTURE_2D, velocity_texture)
+      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
+      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
+
+      GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, options.gridWidth, options.gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
+
+      velocity_fbo = GL.createFramebuffer()
+      GL.bindFramebuffer(GL.FRAMEBUFFER, velocity_fbo)
+
+      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, velocity_texture, 0)
+
+      renderbuffer = GL.createRenderbuffer();
+      GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
+      GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
+
+      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, velocity_texture, 0)
+      GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
+
+      // ------------------------------------------------------------------------------------
+
+      GL.bindTexture(GL.TEXTURE_2D, null)
+      GL.bindRenderbuffer(GL.RENDERBUFFER, null)
+      GL.bindFramebuffer(GL.FRAMEBUFFER, null)
 
       // bioCrowds.setupMarkerBuffers()
     },
@@ -293,23 +326,144 @@ var BioCrowds = function(gl, options) {
         gl.drawables.push(agent)
         drawables.push(agent)
       }
-
+      velocityCalculator.init(agents, projector)
       voronoiGenerator.initAgentBuffers(agents)
     },
 
     step: function(t) {
       var GL = gl.getGL()
-      // GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiFBO)
-      GL.clear( GL.DEPTH_BUFFER_BIT)
-      GL.viewport(0, 0, options.gridWidth, options.gridDepth)
+
       gl.VoronoiShader.setViewProj(projector.viewproj)
+
+      GL.bindFramebuffer(GL.FRAMEBUFFER, voronoi_fbo)
+      GL.viewport(0, 0, options.gridWidth, options.gridDepth)
+      GL.clear( GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
       gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)
-      GL.readPixels(0,0,gridWidth,gridDepth, GL.RGBA, GL.UNSIGNED_BYTE, voronoiBuffer)
+
+      GL.bindFramebuffer(GL.FRAMEBUFFER, null)
+      GL.viewport(0, 0, 150, 150)
+      GL.clear( GL.DEPTH_BUFFER_BIT )
+      gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)
+
+      // GL.bindFramebuffer(GL.FRAMEBUFFER, null)
+      // GL.clear( GL.DEPTH_BUFFER_BIT )
+      // GL.activeTexture(GL.TEXTURE0)
+      // GL.bindTexture(GL.TEXTURE_2D, voronoi_texture)
+      // GL.viewport(options.gridWidth, 0, options.gridWidth, options.gridDepth)
+
+      // var uv = vec3.create()
+      // var agentPositions = []
+
+      // for (var i = 0; i < agents.length; i++) {
+        // vec3.transformMat4(uv, agents[i].pos, projector.viewproj)
+        // agentPositions.push(uv[0])
+        // agentPositions.push(uv[1])
+      // }
+
+      // GL.bindFramebuffer(GL.FRAMEBUFFER, velocity_fbo)
+      // GL.clear( GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
+      // GL.viewport(options.gridWidth, 0, options.gridWidth, options.gridDepth)
+      velocityCalculator.setupDraw(agents, projector.viewproj, voronoi_texture)
+      GL.viewport(150, 0, 150, 150)
+      velocityCalculator.drawWeights()
+      // GL.viewport(2*options.gridWidth, 0, options.gridWidth, options.gridDepth)
+      // velocityCalculator.drawDirections()
+
+      GL.viewport(options.gridWidth, 0, options.gridWidth, options.gridDepth)
+      GL.viewport(0, 0, options.gridWidth, options.gridDepth)
+      velocityCalculator.draw()
+
+      var projected = vec3.create()
+      for (var i = 0; i < agents.length; i++) {
+        vec3.transformMat4(projected, agents[i].pos, projector.viewproj)
+        var u = 0.5*(projected[0]+1)
+        var v = 0.5*(projected[1]+1)
+
+        var vel = velocityCalculator.getVelocityAt(u, v)
+        vec3.copy(agents[i].vel, vel)
+        if (vec3.length(vel) > 0) {
+          vec3.copy(agents[i].forward, vel)
+        }
+        vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
+      }
+      
+      // GL.viewport(2*options.gridWidth, 0, options.gridWidth, options.gridDepth)
+      // velocityCalculator.drawDirections()
+
+      // GL.viewport(options.gridWidth, options.gridDepth, options.gridWidth, options.gridDepth)
+      // velocityCalculator.drawMarkerVecs()
+
+      velocityCalculator.teardown()
+      voronoiGenerator.updateBuffers()
+      return;
+      // GL.readPixels(options.gridWidth,0,options.gridWidth,options.gridDepth, GL.RGBA, GL.UNSIGNED_BYTE, voronoiBuffer)
+      // gl.VelocityShader.draw(velocityCalculator.buffer())
+
+      // var positions = [
+      // -1,-1,0,1,
+      // 1,-1,0,1,
+      // -1,1,0,1,
+      // 1,1,0,1
+      // ]
+      // var uvs = [
+      //   0,0,
+      //   1,0,
+      //   0,1,
+      //   1,1
+      // ]
+      // var colors = [
+      //   1,1,1,1,
+      //   0,1,0,1,
+      //   1,0,0,1,
+      //   0,0,1,1
+      // ]
+      // var indices = [0,1,2, 1,2,3]
+
+      // var v_pos = GL.createBuffer()
+      // GL.bindBuffer(GL.ARRAY_BUFFER, v_pos)
+      // GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(positions), GL.STATIC_DRAW)
+
+      // var v_col = GL.createBuffer()
+      // GL.bindBuffer(GL.ARRAY_BUFFER, v_col)
+      // GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(colors), GL.STATIC_DRAW)
+
+      // var v_uv = GL.createBuffer()
+      // GL.bindBuffer(GL.ARRAY_BUFFER, v_uv)
+      // GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(uvs), GL.STATIC_DRAW)
+
+      // var idx = GL.createBuffer()
+      // GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, idx)
+      // GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), GL.STATIC_DRAW)
+
+      // var s = 256
+      // var test = new Uint8Array(s*s*4)
+      // GL.bindFramebuffer(GL.FRAMEBUFFER, voronoi_fbo)
+      // GL.clear( GL.DEPTH_BUFFER_BIT)
+      // GL.viewport(0, 0, s, s )
+      // gl.TestShader.draw({
+      //   positions: v_pos,
+      //   indices: idx,
+      //   uvs: v_uv,
+      //   colors: v_col,
+      //   drawMode: GL.TRIANGLES,
+      //   count: 6
+      // })      
+      // GL.readPixels(0,0,s,s, GL.RGBA, GL.UNSIGNED_BYTE, test)
+
+      // console.log(test)
+      
+      // GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiFBO)
+      // GL.clear( GL.DEPTH_BUFFER_BIT)
+      // GL.viewport(0, 0, options.gridWidth, options.gridDepth)
+      // gl.VoronoiShader.setViewProj(projector.viewproj)
+      // gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)
+      // GL.readPixels(0,0,options.gridWidth,options.gridDepth, GL.RGBA, GL.UNSIGNED_BYTE, voronoiBuffer)
+      // console.log(voronoiBuffer)
 
       blockGenerator.chunk(agents, voronoiBuffer, options)
 
       GL.clear( GL.DEPTH_BUFFER_BIT)
-      GL.viewport(options.gridWidth, 0, options.gridWidth, options.gridDepth)
+      GL.viewport(0, options.gridDepth, options.gridWidth, options.gridDepth)
       gl.PixelShader.draw(blockGenerator.buffer())
 
       for (var i = 0; i < agents.length; i++) {
@@ -342,7 +496,7 @@ var BioCrowds = function(gl, options) {
           var r = vec3.create()
           var scale = 1
 
-          var RES = 10  
+          var RES = projector.RES;//10  
           vec3.scaleAndAdd(test, agents[i].pos, agents[i].vel, t*scale)
           vec3.normalize(r, agents[i].vel)
           vec3.scaleAndAdd(test, test, r, 0.5)
@@ -355,7 +509,7 @@ var BioCrowds = function(gl, options) {
           var id = [Math.round(c[0]/255*RES), Math.round(c[1]/255*RES), Math.round(c[2]/255*RES)]
           id = id[0] + id[1]*RES + id[2]*RES*RES
           
-          if (id != i) {
+          if (false && id != i) {
             // console.log(i, 'hit', id, 'at', x, y, c)
           } else {
             vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)

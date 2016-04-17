@@ -1,6 +1,14 @@
 'use strict';
 
+var ANGLE_initialized = false;
+var ext;
+
 module.exports = function (gl, shaders) {
+  if (!ANGLE_initialized) {
+    ext = gl.getExtension("ANGLE_instanced_arrays")
+    ANGLE_initialized = true
+  }
+
   var modelMat = mat4.create();
   var invTrMat = mat4.create();
   var viewProjMat = mat4.create();
@@ -38,60 +46,82 @@ module.exports = function (gl, shaders) {
       alert("Could not link program!");
     }
 
-    shaderProgram.attrPos = gl.getAttribLocation(shaderProgram, "vs_pos");
-    shaderProgram.attrCol = gl.getAttribLocation(shaderProgram, "vs_col");
-    shaderProgram.attrNor = gl.getAttribLocation(shaderProgram, "vs_nor");
-    shaderProgram.unifViewProj = gl.getUniformLocation(shaderProgram, "u_ViewProj");
-    shaderProgram.unifModel = gl.getUniformLocation(shaderProgram, "u_Model");
-    shaderProgram.unifInvTrans = gl.getUniformLocation(shaderProgram, "u_InvTrans");
-    shaderProgram.unifCol = gl.getUniformLocation(shaderProgram, 'u_Color');
+    shaderProgram.attrPos = gl.getAttribLocation(shaderProgram, "vs_pos")
+    shaderProgram.attrCol = gl.getAttribLocation(shaderProgram, "vs_col")
+    shaderProgram.attrNor = gl.getAttribLocation(shaderProgram, "vs_nor")
+    shaderProgram.attrUv = gl.getAttribLocation(shaderProgram, "vs_uv")
+    shaderProgram.unifViewProj = gl.getUniformLocation(shaderProgram, "u_ViewProj")
+    shaderProgram.unifModel = gl.getUniformLocation(shaderProgram, "u_Model")
+    shaderProgram.unifInvTrans = gl.getUniformLocation(shaderProgram, "u_InvTrans")
+    shaderProgram.unifCol = gl.getUniformLocation(shaderProgram, 'u_Color')
 
     shaderProgram.attrOffset = gl.getAttribLocation(shaderProgram, "vs_offset")
+    shaderProgram.attrVelocity = gl.getAttribLocation(shaderProgram, "vs_velocity")
     shaderProgram.attrId = gl.getAttribLocation(shaderProgram, "vs_id")
+
+    shaderProgram.unifImage0 = gl.getUniformLocation(shaderProgram, "u_image0")
   }
 
   this.draw = function(obj, divisor) {
     gl.useProgram(shaderProgram);
 
+    if (shaderProgram.unifImage0 != -1) {
+      gl.uniform1i(shaderProgram.unifImage0, 0)
+    }
+
     if (shaderProgram.attrPos != -1 && obj.positions) {
       gl.bindBuffer(gl.ARRAY_BUFFER, obj.positions)
       gl.enableVertexAttribArray(shaderProgram.attrPos);
       gl.vertexAttribPointer(shaderProgram.attrPos, 4, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrPos, 0);
     }
     if (shaderProgram.attrNor != -1 && obj.normals) {
       gl.bindBuffer(gl.ARRAY_BUFFER, obj.normals)
       gl.enableVertexAttribArray(shaderProgram.attrNor);
       gl.vertexAttribPointer(shaderProgram.attrNor, 4, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrNor, 0);
     }
     if (shaderProgram.attrCol != -1 && obj.colors) {
       gl.bindBuffer(gl.ARRAY_BUFFER, obj.colors)
       gl.enableVertexAttribArray(shaderProgram.attrCol);
       gl.vertexAttribPointer(shaderProgram.attrCol, 4, gl.FLOAT, true, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrCol, 0);
+    }
+    if (shaderProgram.attrUv != -1 && obj.uvs) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, obj.uvs)
+      gl.enableVertexAttribArray(shaderProgram.attrUv);
+      gl.vertexAttribPointer(shaderProgram.attrUv, 2, gl.FLOAT, true, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrUv, 0);
     }
 
-    var ext;
-    if (divisor) {
-      ext = gl.getExtension("ANGLE_instanced_arrays");
-      
+    // if (divisor) {
+
       if (shaderProgram.attrOffset != -1 && obj.offsets) {
         gl.bindBuffer(gl.ARRAY_BUFFER, obj.offsets)
-        gl.enableVertexAttribArray(shaderProgram.attrOffset);
+        gl.enableVertexAttribArray(shaderProgram.attrOffset)
         gl.vertexAttribPointer(shaderProgram.attrOffset, 3, gl.FLOAT, false, 0, 0);
         ext.vertexAttribDivisorANGLE(shaderProgram.attrOffset, 1);
       }
+      if (shaderProgram.attrVelocity != -1 && obj.velocities) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, obj.velocities)
+        gl.enableVertexAttribArray(shaderProgram.attrVelocity)
+        gl.vertexAttribPointer(shaderProgram.attrVelocity, 3, gl.FLOAT, false, 0, 0);
+        ext.vertexAttribDivisorANGLE(shaderProgram.attrVelocity, 1);
+      }
       if (shaderProgram.attrId != -1 && obj.ids) {
         gl.bindBuffer(gl.ARRAY_BUFFER, obj.ids)
-        gl.enableVertexAttribArray(shaderProgram.attrId);
+        gl.enableVertexAttribArray(shaderProgram.attrId)
         gl.vertexAttribPointer(shaderProgram.attrId, 3, gl.FLOAT, false, 0, 0); 
         ext.vertexAttribDivisorANGLE(shaderProgram.attrId, 1);
       }
-    }
+    // }
 
     if (divisor) {
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, obj.indices);
       ext.drawElementsInstancedANGLE(obj.drawMode, obj.count, gl.UNSIGNED_SHORT, 0, obj.ids.numItems);
     } else {
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, obj.indices);
+      // ext.drawElementsInstancedANGLE(obj.drawMode, obj.count, gl.UNSIGNED_SHORT, 0, 1);
       gl.drawElements(obj.drawMode, obj.count, gl.UNSIGNED_SHORT, 0);
     }
 
@@ -104,14 +134,17 @@ module.exports = function (gl, shaders) {
     if (shaderProgram.attrCol != -1) {
       gl.disableVertexAttribArray(shaderProgram.attrCol)
     }
-    if (divisor) {
+    // if (divisor) {
       if (shaderProgram.attrOffset != -1) {
         gl.disableVertexAttribArray(shaderProgram.attrOffset)
+      }
+      if (shaderProgram.attrVelocity != -1) {
+        gl.disableVertexAttribArray(shaderProgram.attrVelocity)
       }
       if (shaderProgram.attrId != -1) {
         gl.disableVertexAttribArray(shaderProgram.attrId)
       }
-    }
+    // }
   }
 
   this.setViewProj = function(matrix) {
