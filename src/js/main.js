@@ -70,18 +70,18 @@ domready(function () {
     biocrowds.initAgents(scene.agents)    
     gl.draw() 
 
-    document.getElementById('markerDensity').value = options.markerDensity
-    document.getElementById('searchRadius').value = options.searchRadius
-    document.getElementById('rightPreference').checked = options.rightPreference
-    document.getElementById('drawMarkers').checked = options.drawMarkers
+    // document.getElementById('markerDensity').value = options.markerDensity
+    // document.getElementById('searchRadius').value = options.searchRadius
+    // document.getElementById('rightPreference').checked = options.rightPreference
+    // document.getElementById('drawMarkers').checked = options.drawMarkers
   }
 
-  document.getElementById('update-btn').onclick = function() {
-    options.markerDensity = parseFloat(document.getElementById('markerDensity').value)
-    options.searchRadius = parseFloat(document.getElementById('searchRadius').value)
-    options.rightPreference = document.getElementById('rightPreference').checked
-    options.drawMarkers = document.getElementById('drawMarkers').checked
-  }
+  // document.getElementById('update-btn').onclick = function() {
+  //   options.markerDensity = parseFloat(document.getElementById('markerDensity').value)
+  //   options.searchRadius = parseFloat(document.getElementById('searchRadius').value)
+  //   options.rightPreference = document.getElementById('rightPreference').checked
+  //   options.drawMarkers = document.getElementById('drawMarkers').checked
+  // }
 
   document.getElementById('circle-scene-btn').onclick = function() {
     loadScene(CircleScene)
@@ -92,15 +92,34 @@ domready(function () {
   }
 
   var simulationInterval
+
+  var diff = 16.66666
+  var stepSimulation = function() {
+    var t0 = performance.now()
+    gl.draw()
+    biocrowds.step(diff / 1000)
+    var t1 = performance.now()
+    diff = Math.max(t1 - t0, 16.66666)
+    var fps = 1000/diff;
+    document.getElementById('fps').innerHTML = fps.toFixed(3) + ' fps';
+    simulationInterval = setTimeout(stepSimulation, diff)
+  }
+
   var runSimulation = function() {
     if (biocrowds) {
       if (!running) {
         running = true
+        stepSimulation()
+        /*
         simulationInterval = setInterval(function() {
           //biocrowds.step(1/24)
+          var t0 = performance.now()
           gl.draw()
-          biocrowds.step(1/24)
-        }, 4)
+          var t1 = performance.now()
+          var diff = t1 - t0;
+          console.log((t1 - t0)/1000)
+          biocrowds.step(diff/1000)
+        }, 4)*/
       }
     }
   }

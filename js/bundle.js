@@ -20748,6 +20748,7 @@ var BlockGenerator = require('./block-generate')
 var VoronoiGenerator = require('./voronoi-generate')
 var Projector = require('./projector')
 var VelocityCalculator = require('./velocity-calculate')
+var VoronoiRefine = require('./voronoi-refine')
 
 var defaultOptions = {
   originX: -16,
@@ -20755,6 +20756,7 @@ var defaultOptions = {
   sizeX: 32,
   sizeZ: 32,
   markerDensity: 10,
+  // gridSize: 0.0625,
   gridSize: 0.125,
   searchRadius: 3,
   rightPreference: false,
@@ -20876,6 +20878,7 @@ var BioCrowds = function(gl, options) {
   var blockGenerator
   var voronoiGenerator
   var velocityCalculator
+  var voronoiRefine
   var voronoi_texture
   var voronoi_fbo
   var velocity_fbo
@@ -20889,6 +20892,7 @@ var BioCrowds = function(gl, options) {
       blockGenerator = new BlockGenerator(GL, projector, options)
       voronoiGenerator = new VoronoiGenerator(GL, projector, options)
       velocityCalculator = new VelocityCalculator(options)
+      voronoiRefine = new VoronoiRefine(options)
 
       var planeTrans = mat4.create()
       mat4.scale(planeTrans, planeTrans, vec3.fromValues(options.sizeX, 1, options.sizeZ))
@@ -20960,55 +20964,6 @@ var BioCrowds = function(gl, options) {
       }
     },
 
-    setupMarkerBuffers: function() {
-      var GL = gl.getGL()
-      var positions = []
-      var colors = []
-      var indices = []
-      for (var i = 0; i < markers.length; i++) {
-        positions.push(markers[i].pos[0])
-        positions.push(markers[i].pos[1])
-        positions.push(markers[i].pos[2])
-        positions.push(1)
-        colors = colors.concat(markers[i].col)
-        indices.push(i)
-      }
-
-      var position_buffer = GL.createBuffer()
-      GL.bindBuffer(GL.ARRAY_BUFFER, position_buffer)
-      GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(positions), GL.STATIC_DRAW)
-      positions.itemSize = 4
-      positions.numItems = markers.length
-
-      var color_buffer = GL.createBuffer()
-      GL.bindBuffer(GL.ARRAY_BUFFER, color_buffer)
-      GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(colors), GL.STATIC_DRAW)
-      colors.itemSize = 4
-      colors.numItems = markers.length
-
-      var index_buffer = GL.createBuffer()
-      GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, index_buffer)
-      GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), GL.STATIC_DRAW)
-      index_buffer.itemSize = 1
-      index_buffer.numItems = markers.length
-
-      var markersDrawable = {
-        positions: position_buffer,
-        colors: color_buffer,
-        indices: index_buffer,
-        count: markers.length,
-        drawMode: GL.POINTS
-      }
-
-      var markerDraw = {
-        draw: function() {
-          gl.MarkerShader.draw(markersDrawable)
-        }
-      }
-      drawables.push(markerDraw)
-      gl.drawables.push(markerDraw)
-    },
-
     initAgents: function(theagents) {
       agents = theagents
 
@@ -21019,6 +20974,7 @@ var BioCrowds = function(gl, options) {
       var agentPainter = function(idx) {
         return {
           draw: function() {
+            if (agents[idx].finished) return
             mat4.identity(agentTransMat)
             mat4.translate(agentTransMat, agentTransMat, agents[idx].pos)
             mat4.translate(agentTransMat, agentTransMat, agentOffset)
@@ -21081,29 +21037,16 @@ var BioCrowds = function(gl, options) {
       GL.clear( GL.DEPTH_BUFFER_BIT )
       gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)
 
-      // GL.bindFramebuffer(GL.FRAMEBUFFER, null)
-      // GL.clear( GL.DEPTH_BUFFER_BIT )
-      // GL.activeTexture(GL.TEXTURE0)
-      // GL.bindTexture(GL.TEXTURE_2D, voronoi_texture)
-      // GL.viewport(options.gridWidth, 0, options.gridWidth, options.gridDepth)
-
-      // var uv = vec3.create()
-      // var agentPositions = []
-
-      // for (var i = 0; i < agents.length; i++) {
-        // vec3.transformMat4(uv, agents[i].pos, projector.viewproj)
-        // agentPositions.push(uv[0])
-        // agentPositions.push(uv[1])
-      // }
-
-      // GL.bindFramebuffer(GL.FRAMEBUFFER, velocity_fbo)
-      // GL.clear( GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
-      // GL.viewport(options.gridWidth, 0, options.gridWidth, options.gridDepth)
-      velocityCalculator.setupDraw(agents, projector.viewproj, voronoi_texture)
+      GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiRefine.fbo)
+      GL.viewport(0, 0, options.gridWidth, options.gridDepth)
+      voronoiRefine.draw(voronoi_texture)
+      GL.bindFramebuffer(GL.FRAMEBUFFER, null)
       GL.viewport(150, 0, 150, 150)
+      voronoiRefine.draw(voronoi_texture)
+
+      velocityCalculator.setupDraw(agents, projector.viewproj, voronoiRefine.tex)
+      GL.viewport(300, 0, 150, 150)
       velocityCalculator.drawWeights()
-      // GL.viewport(2*options.gridWidth, 0, options.gridWidth, options.gridDepth)
-      // velocityCalculator.drawDirections()
 
       GL.viewport(options.gridWidth, 0, options.gridWidth, options.gridDepth)
       GL.viewport(0, 0, options.gridWidth, options.gridDepth)
@@ -21111,254 +21054,26 @@ var BioCrowds = function(gl, options) {
 
       var projected = vec3.create()
       for (var i = 0; i < agents.length; i++) {
+        if (agents[i].finished) continue
         vec3.transformMat4(projected, agents[i].pos, projector.viewproj)
         var u = 0.5*(projected[0]+1)
         var v = 0.5*(projected[1]+1)
 
         var vel = velocityCalculator.getVelocityAt(u, v)
-        vec3.copy(agents[i].vel, vel)
         if (vec3.length(vel) > 0) {
-          vec3.copy(agents[i].forward, vel)
+          vec3.lerp(agents[i].forward, agents[i].forward, vel, vec3.length(vel)/8);
+          // vec3.copy(agents[i].forward, vel)
         }
+        vec3.copy(agents[i].vel, vel)
         vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
+
+        if (vec3.distance(agents[i].pos, agents[i].goal) < 0.5) {
+          agents[i].finished = true;
+        }
       }
       
-      // GL.viewport(2*options.gridWidth, 0, options.gridWidth, options.gridDepth)
-      // velocityCalculator.drawDirections()
-
-      // GL.viewport(options.gridWidth, options.gridDepth, options.gridWidth, options.gridDepth)
-      // velocityCalculator.drawMarkerVecs()
-
       velocityCalculator.teardown()
       voronoiGenerator.updateBuffers()
-      return;
-      // GL.readPixels(options.gridWidth,0,options.gridWidth,options.gridDepth, GL.RGBA, GL.UNSIGNED_BYTE, voronoiBuffer)
-      // gl.VelocityShader.draw(velocityCalculator.buffer())
-
-      // var positions = [
-      // -1,-1,0,1,
-      // 1,-1,0,1,
-      // -1,1,0,1,
-      // 1,1,0,1
-      // ]
-      // var uvs = [
-      //   0,0,
-      //   1,0,
-      //   0,1,
-      //   1,1
-      // ]
-      // var colors = [
-      //   1,1,1,1,
-      //   0,1,0,1,
-      //   1,0,0,1,
-      //   0,0,1,1
-      // ]
-      // var indices = [0,1,2, 1,2,3]
-
-      // var v_pos = GL.createBuffer()
-      // GL.bindBuffer(GL.ARRAY_BUFFER, v_pos)
-      // GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(positions), GL.STATIC_DRAW)
-
-      // var v_col = GL.createBuffer()
-      // GL.bindBuffer(GL.ARRAY_BUFFER, v_col)
-      // GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(colors), GL.STATIC_DRAW)
-
-      // var v_uv = GL.createBuffer()
-      // GL.bindBuffer(GL.ARRAY_BUFFER, v_uv)
-      // GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(uvs), GL.STATIC_DRAW)
-
-      // var idx = GL.createBuffer()
-      // GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, idx)
-      // GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), GL.STATIC_DRAW)
-
-      // var s = 256
-      // var test = new Uint8Array(s*s*4)
-      // GL.bindFramebuffer(GL.FRAMEBUFFER, voronoi_fbo)
-      // GL.clear( GL.DEPTH_BUFFER_BIT)
-      // GL.viewport(0, 0, s, s )
-      // gl.TestShader.draw({
-      //   positions: v_pos,
-      //   indices: idx,
-      //   uvs: v_uv,
-      //   colors: v_col,
-      //   drawMode: GL.TRIANGLES,
-      //   count: 6
-      // })      
-      // GL.readPixels(0,0,s,s, GL.RGBA, GL.UNSIGNED_BYTE, test)
-
-      // console.log(test)
-      
-      // GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiFBO)
-      // GL.clear( GL.DEPTH_BUFFER_BIT)
-      // GL.viewport(0, 0, options.gridWidth, options.gridDepth)
-      // gl.VoronoiShader.setViewProj(projector.viewproj)
-      // gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)
-      // GL.readPixels(0,0,options.gridWidth,options.gridDepth, GL.RGBA, GL.UNSIGNED_BYTE, voronoiBuffer)
-      // console.log(voronoiBuffer)
-
-      blockGenerator.chunk(agents, voronoiBuffer, options)
-
-      GL.clear( GL.DEPTH_BUFFER_BIT)
-      GL.viewport(0, options.gridDepth, options.gridWidth, options.gridDepth)
-      gl.PixelShader.draw(blockGenerator.buffer())
-
-      for (var i = 0; i < agents.length; i++) {
-        var totalW = 0
-        var mvec = vec2.fromValues(0,0)
-
-        for (var j = 0; j < agents[i].blocks.length; j++) {
-          totalW += agents[i].blocks[j].weight
-        }
-
-        for (var j = 0; j < agents[i].blocks.length; j++) {
-          if (isNaN(agents[i].blocks[j].pos[0])) {
-            continue
-          }
-          vec2.scaleAndAdd(mvec, mvec, agents[i].blocks[j].pos, agents[i].blocks[j].weight / totalW)
-        }
-
-        var screenPos = vec3.fromValues(2*mvec[0]/options.gridWidth, 2*mvec[1]/options.gridDepth, 0)
-        vec3.transformMat4(screenPos, screenPos, projector.invviewproj)
-        screenPos[1] = 0
-
-        agents[i].vel = screenPos
-        agents[i].forward = screenPos
-      }
-
-      for (var i = 0; i < agents.length; i++) {
-        if (!agents[i].done) {   
-
-          var test = vec3.create()
-          var r = vec3.create()
-          var scale = 1
-
-          var RES = projector.RES;//10  
-          vec3.scaleAndAdd(test, agents[i].pos, agents[i].vel, t*scale)
-          vec3.normalize(r, agents[i].vel)
-          vec3.scaleAndAdd(test, test, r, 0.5)
-          vec3.transformMat4(test, test, projector.viewproj)
-
-          var x = 0.5*(test[0]+1)*gridWidth
-          var y = 0.5*(test[1]+1)*gridDepth
-          var idx = 4*(parseInt(x) + parseInt(y) * gridWidth)
-          var c = [voronoiBuffer[idx], voronoiBuffer[idx+1], voronoiBuffer[idx+2]]
-          var id = [Math.round(c[0]/255*RES), Math.round(c[1]/255*RES), Math.round(c[2]/255*RES)]
-          id = id[0] + id[1]*RES + id[2]*RES*RES
-          
-          if (false && id != i) {
-            // console.log(i, 'hit', id, 'at', x, y, c)
-          } else {
-            vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
-
-            if (vec3.distance(agents[i].pos, agents[i].goal) < 0.5) {
-              agents[i].pos[0] = 1000000000
-              agents[i].goal[0] = 100000000
-            }
-          }
-        }
-
-      }
-
-      voronoiGenerator.updateBuffers()
-
-
-      /*var markerIndices = []
-      var agentGrid = Grid()
-      var markerGridCells = new Set()
-
-      for (var i = 0; i < agents.length; i++) {
-        if (!agents[i].done) {   
-          agents[i].markers = []
-          agentGrid.addItem(i, agents[i].pos[0], agents[i].pos[2]) 
-
-          var cells = markerGrid.cellsInRadius(agents[i].pos, options.searchRadius)
-          for (var j = 0; j < cells.length; j++) {
-            markerGridCells.add(cells[j])
-          }
-        }
-      }
-
-      markerGridCells.forEach(function(cell) {
-        markerIndices.push.apply(markerIndices, markerGrid.cells[cell].items)
-      })
-
-      for (var i = 0; i < markerIndices.length; i++) {
-        var markerIdx = markerIndices[i]
-        var agentIndices = []
-        var cells = agentGrid.cellsInRadius(markers[markerIdx].pos, options.searchRadius)
-        for (var j = 0; j < cells.length; j++) {
-          agentIndices.push.apply(agentIndices, agentGrid.cells[cells[j]].items)
-        }
-
-        var closest = -1
-        var bestWeight
-        for (var j = 0; j < agentIndices.length; j++) {
-          var agentIdx = agentIndices[j]
-          var dist = vec3.distance(agents[agentIdx].pos, markers[markerIdx].pos)
-          if (dist < options.searchRadius) {
-            var markerVec = vec3.create()
-            vec3.subtract(markerVec, markers[markerIdx].pos, agents[agentIdx].pos)
-            vec3.normalize(markerVec, markerVec)
-
-            var weight = 1/dist
-            if (options.rightPreference) {
-              weight *= (0.5 + 0.5*Math.abs(vec3.dot(agents[agentIdx].forward, markerVec)))
-            }
-            if (closest == -1 || weight > bestWeight) {
-              bestWeight = weight
-              closest = agentIdx
-            } 
-          }
-        }
-        if (closest != -1) {
-          agents[closest].markers.push(markerIdx)
-        }
-      }
-
-      for (var i = 0; i < agents.length; i++) {
-        if (!agents[i].done) {   
-          var totalWeight = 0
-          
-          for (var j = 0; j < agents[i].markers.length; j++) {
-            var goalVec = vec3.create()
-            var markerVec = vec3.create()
-
-            vec3.subtract(goalVec, agents[i].goal, agents[i].pos)
-            vec3.subtract(markerVec, markers[agents[i].markers[j]].pos, agents[i].pos)
-
-            var weight = 1 + vec3.dot(goalVec, markerVec) / (vec3.length(goalVec) * vec3.length(markerVec))
-
-            markers[agents[i].markers[j]].weight = weight
-            totalWeight += weight
-
-            if (vec3.length(goalVec) <= 0.5) {
-              agents[i].done = true
-            }
-          }
-
-          var motionVec = vec3.create()
-          var markerVec = vec3.create()
-          for (var j = 0; j < agents[i].markers.length; j++) {
-            vec3.subtract(markerVec, markers[agents[i].markers[j]].pos, agents[i].pos)
-            vec3.scaleAndAdd(motionVec, motionVec, markerVec, markers[agents[i].markers[j]].weight/totalWeight)
-          }
-
-          vec3.copy(agents[i].vel, motionVec)
-          vec3.normalize(motionVec, motionVec)
-          vec3.copy(agents[i].forward, motionVec)
-
-          vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
-        }
-      }*/
-
-      // GL.bindFramebuffer(GL.FRAMEBUFFER, null)
-      // GL.viewport(0, 0, GL.viewportWidth, GL.viewportHeight)
-      // // GL.viewport(0, 0, gridWidth, gridDepth)
-      // GL.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
-      // gl.VoronoiShader.setViewProj(viewproj)
-      // gl.VoronoiShader.draw(Sprite, true)
-
-
     },
 
     getOptions: function() {
@@ -21369,7 +21084,7 @@ var BioCrowds = function(gl, options) {
 }
 
 module.exports = BioCrowds
-},{"../lib/sobol.js":194,"../objects/cone.js":197,"../objects/cube.js":198,"../objects/cylinder.js":199,"../objects/plane.js":200,"../objects/triangle.js":201,"../shaderprogram.js":204,"./block-generate":186,"./projector":189,"./velocity-calculate":190,"./voronoi-generate":191}],189:[function(require,module,exports){
+},{"../lib/sobol.js":195,"../objects/cone.js":198,"../objects/cube.js":199,"../objects/cylinder.js":200,"../objects/plane.js":201,"../objects/triangle.js":202,"../shaderprogram.js":205,"./block-generate":186,"./projector":189,"./velocity-calculate":190,"./voronoi-generate":191,"./voronoi-refine":192}],189:[function(require,module,exports){
 'use strict'
 
 module.exports = function(options) {
@@ -21444,6 +21159,7 @@ module.exports = function(options) {
   shaderProgram.unifWeightsTex = gl.getUniformLocation(shaderProgram, "u_weights")
   shaderProgram.R = gl.getUniformLocation(shaderProgram, "u_R")
   shaderProgram.windowSize = gl.getUniformLocation(shaderProgram, "windowSize")
+  shaderProgram.gridScale = gl.getUniformLocation(shaderProgram, "u_gScale")
 
   var positions = [
   -1,-1,0,1,
@@ -21576,6 +21292,7 @@ module.exports = function(options) {
 
     velocityBufferDirty = true
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.bindTexture(gl.TEXTURE_2D, null)
 
     gl.bindBuffer(gl.ARRAY_BUFFER, v_pos)
     gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW)
@@ -21594,26 +21311,17 @@ module.exports = function(options) {
     var idx = parseInt(u*options.gridWidth) + options.gridWidth*parseInt(v*options.gridDepth)
     // console.log(velocityBuffer[4*idx], velocityBuffer[4*idx+1], velocityBuffer[4*idx+2], velocityBuffer[4*idx+3])
     var projected = vec4.fromValues(velocityBuffer[4*idx] / 256 * 2 - 1, velocityBuffer[4*idx+1] / 256 * 2 - 1, 0, 0)
-    var len = vec4.length(projected)
+    // console.log(projected[0], projected[1])
     // console.log(len)
     vec4.transformMat4(projected, projected, proj.invviewproj)
     projected[1] = 0
+    // vec3.normalize(projected, projected)
+    // console.log(len)
+    // console.log(projected)
+    var len = Math.max(vec4.length(projected), 4)
     vec3.normalize(projected, projected)
-    vec3.scale(projected, projected, 2*len/0.06)
+    vec3.scale(projected, projected, len*options.gridSize*6)
     return projected
-    /*
-        var idx = parseInt(u*options.gridWidth) + options.gridWidth*parseInt(v*options.gridDepth)
-        console.log(voronoiBuffer)
-        console.log(voronoiBuffer[4*idx], voronoiBuffer[4*idx+1], voronoiBuffer[4*idx+2], voronoiBuffer[4*idx+3])
-        vec3.set(projected, voronoiBuffer[4*idx] / 256 * 2 - 1, voronoiBuffer[4*idx+1] / 256 * 2 - 1, 0)
-        // console.log(projected)
-        vec3.transformMat4(projected, projected, projector.invviewproj)
-        projected[1] = 0;
-        // console.log(projected)
-        vec3.normalize(projected, projected)
-        vec3.copy(agents[i].vel, projected)
-        vec3.copy(agents[i].forward, projected)
-        vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)*/
   }
 
   this.init = function(agents, projector) {
@@ -21686,6 +21394,7 @@ module.exports = function(options) {
 
     gl.useProgram(shaderProgram);
 
+    gl.uniform1f(shaderProgram.gridScale, options.gridSize)
     gl.uniform1f(gl.getUniformLocation(shaderProgram, "numAgents"), agents.length)
     gl.uniform2f(shaderProgram.windowSize, options.gridWidth, options.gridDepth)
     gl.uniform1i(shaderProgram.unifImage0, 0)
@@ -21717,7 +21426,7 @@ module.exports = function(options) {
     gl.disableVertexAttribArray(shaderProgram.attrUv)
   }
 }
-},{"../gl.js":193}],191:[function(require,module,exports){
+},{"../gl.js":194}],191:[function(require,module,exports){
 'use strict'
 
 var Cone = require('../objects/cone.js')
@@ -21803,14 +21512,23 @@ module.exports = function(GL, projector, options) {
   this.updateBuffers = function() {
     for (var i = 0; i < agents.length; i++) {
       var offset = agents[i].pos
-      offsetArray[3*i] = offset[0]
-      offsetArray[3*i+1] = offset[1]
-      offsetArray[3*i+2] = offset[2]
+      if (agents[i].finished) {
+        offsetArray[3*i] = 99999.0
+        offsetArray[3*i+1] = 99999.0
+        offsetArray[3*i+2] = 99999.0
+      } else {
+        offsetArray[3*i] = offset[0]
+        offsetArray[3*i+1] = offset[1]
+        offsetArray[3*i+2] = offset[2]
+      }
 
       offset = agents[i].forward
       velocityArray[3*i] = offset[0]
       velocityArray[3*i+1] = offset[1]
       velocityArray[3*i+2] = offset[2]
+
+      // vec3.normalize(offset, offset)
+      // console.log(Math.atan2(-offset[2], offset[1]))
     }
     GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
     GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
@@ -21823,7 +21541,143 @@ module.exports = function(GL, projector, options) {
     return sprites
   }
 }
-},{"../objects/cone.js":197}],192:[function(require,module,exports){
+},{"../objects/cone.js":198}],192:[function(require,module,exports){
+'use strict'
+
+var GL = require('../gl.js')
+
+module.exports = function(options) {
+  var gl = GL.get()
+  var ext = gl.getExtension("ANGLE_instanced_arrays")
+
+  var getShader = function(source, type) {
+    var shader = gl.createShader(type)
+
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      alert(gl.getShaderInfoLog(shader));
+      return null;
+    }
+
+    return shader;
+  }
+
+  var shaderProgram = gl.createProgram()
+  gl.attachShader(shaderProgram, getShader(voronoi_refine_vertex_shader_src, gl.VERTEX_SHADER))
+  gl.attachShader(shaderProgram, getShader(voronoi_refine_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.linkProgram(shaderProgram)
+
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    alert("Could not link program!");
+  }
+
+  shaderProgram.attrPos = gl.getAttribLocation(shaderProgram, "vs_pos")
+  shaderProgram.attrUv = gl.getAttribLocation(shaderProgram, "vs_uv")
+  shaderProgram.uImage = gl.getUniformLocation(shaderProgram, "u_image")
+  shaderProgram.windowSize = gl.getUniformLocation(shaderProgram, "windowSize")
+  shaderProgram.gridScale = gl.getUniformLocation(shaderProgram, "u_gScale")
+
+  var positions = [
+  -1,-1,0,1,
+  1,-1,0,1,
+  -1,1,0,1,
+  1,1,0,1
+  ]
+
+  var uvs = [
+    0,0,
+    1,0,
+    0,1,
+    1,1
+  ]
+
+  var indices = [0,1,2,1,2,3]
+
+  positions = new Float32Array(positions)
+  uvs = new Float32Array(uvs)
+  indices = new Uint16Array(indices)
+
+  var v_pos = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, v_pos)
+  gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW)
+
+  var v_uv = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, v_uv)
+  gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.DYNAMIC_DRAW)
+
+  var idx = gl.createBuffer()
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idx)
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW)
+
+  var makeTexture = function() {
+    var texture = gl.createTexture()
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, options.gridWidth, options.gridDepth, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+
+    var fbo = gl.createFramebuffer()
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
+
+    var rbo = gl.createRenderbuffer()
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rbo)
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
+
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rbo)
+
+    gl.bindTexture(gl.TEXTURE_2D, null)
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+
+    return {
+      tex: texture,
+      fbo: fbo,
+      rbo: rbo
+    }
+  }
+
+  var refined_tex = makeTexture()
+
+  this.tex = refined_tex.tex
+  this.fbo = refined_tex.fbo
+  this.rbo = refined_tex.rbo
+
+  this.draw = function(voronoi_tex) {
+    gl.useProgram(shaderProgram)
+
+    gl.uniform2f(shaderProgram.windowSize, options.gridWidth, options.gridDepth)
+    gl.uniform1f(shaderProgram.gridScale, options.gridSize)
+
+    gl.uniform1i(shaderProgram.unifImage, 0)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, voronoi_tex)
+
+    // gl.bindFramebuffer(gl.FRAMEBUFFER, refined_tex.fbo)
+    gl.clear(gl.DEPTH_BUFFER_BIT)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, v_pos)
+    gl.enableVertexAttribArray(shaderProgram.attrPos);
+    gl.vertexAttribPointer(shaderProgram.attrPos, 4, gl.FLOAT, false, 0, 0);
+    ext.vertexAttribDivisorANGLE(shaderProgram.attrPos, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, v_uv)
+    gl.enableVertexAttribArray(shaderProgram.attrUv);
+    gl.vertexAttribPointer(shaderProgram.attrUv, 2, gl.FLOAT, true, 0, 0);
+    ext.vertexAttribDivisorANGLE(shaderProgram.attrUv, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idx);
+
+    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0)
+    
+    gl.bindTexture(gl.TEXTURE_2D, null)
+    // gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  }
+}
+},{"../gl.js":194}],193:[function(require,module,exports){
 'use strict'
 
 var DEG2RAD = 3.14159265 / 180
@@ -21954,7 +21808,7 @@ var Camera = function(w, h) {
 }
 
 module.exports = Camera
-},{}],193:[function(require,module,exports){
+},{}],194:[function(require,module,exports){
 'use strict'
 
 var GL
@@ -21968,7 +21822,7 @@ module.exports =  {
     return GL
   }
 }
-},{}],194:[function(require,module,exports){
+},{}],195:[function(require,module,exports){
 (function (process){
 var BITS = 52;
 var SCALE = 2 << 51;
@@ -43242,7 +43096,7 @@ function test(){
 }
 if(require.main === module) return test();
 }).call(this,require('_process'))
-},{"_process":3}],195:[function(require,module,exports){
+},{"_process":3}],196:[function(require,module,exports){
 'use strict';
 
 var domready = require("domready");
@@ -43315,18 +43169,18 @@ domready(function () {
     biocrowds.initAgents(scene.agents)    
     gl.draw() 
 
-    document.getElementById('markerDensity').value = options.markerDensity
-    document.getElementById('searchRadius').value = options.searchRadius
-    document.getElementById('rightPreference').checked = options.rightPreference
-    document.getElementById('drawMarkers').checked = options.drawMarkers
+    // document.getElementById('markerDensity').value = options.markerDensity
+    // document.getElementById('searchRadius').value = options.searchRadius
+    // document.getElementById('rightPreference').checked = options.rightPreference
+    // document.getElementById('drawMarkers').checked = options.drawMarkers
   }
 
-  document.getElementById('update-btn').onclick = function() {
-    options.markerDensity = parseFloat(document.getElementById('markerDensity').value)
-    options.searchRadius = parseFloat(document.getElementById('searchRadius').value)
-    options.rightPreference = document.getElementById('rightPreference').checked
-    options.drawMarkers = document.getElementById('drawMarkers').checked
-  }
+  // document.getElementById('update-btn').onclick = function() {
+  //   options.markerDensity = parseFloat(document.getElementById('markerDensity').value)
+  //   options.searchRadius = parseFloat(document.getElementById('searchRadius').value)
+  //   options.rightPreference = document.getElementById('rightPreference').checked
+  //   options.drawMarkers = document.getElementById('drawMarkers').checked
+  // }
 
   document.getElementById('circle-scene-btn').onclick = function() {
     loadScene(CircleScene)
@@ -43337,15 +43191,34 @@ domready(function () {
   }
 
   var simulationInterval
+
+  var diff = 16.66666
+  var stepSimulation = function() {
+    var t0 = performance.now()
+    gl.draw()
+    biocrowds.step(diff / 1000)
+    var t1 = performance.now()
+    diff = Math.max(t1 - t0, 16.66666)
+    var fps = 1000/diff;
+    document.getElementById('fps').innerHTML = fps.toFixed(3) + ' fps';
+    simulationInterval = setTimeout(stepSimulation, diff)
+  }
+
   var runSimulation = function() {
     if (biocrowds) {
       if (!running) {
         running = true
+        stepSimulation()
+        /*
         simulationInterval = setInterval(function() {
           //biocrowds.step(1/24)
+          var t0 = performance.now()
           gl.draw()
-          biocrowds.step(1/24)
-        }, 4)
+          var t1 = performance.now()
+          var diff = t1 - t0;
+          console.log((t1 - t0)/1000)
+          biocrowds.step(diff/1000)
+        }, 4)*/
       }
     }
   }
@@ -43397,7 +43270,7 @@ domready(function () {
   loadScene(CircleScene)
   runSimulation()
 })
-},{"./biocrowds":188,"./mygl.js":196,"./objects/cube.js":198,"./objects/plane.js":200,"./scenes/circle.js":202,"./scenes/oncoming.js":203,"./shaderprogram.js":204,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],196:[function(require,module,exports){
+},{"./biocrowds":188,"./mygl.js":197,"./objects/cube.js":199,"./objects/plane.js":201,"./scenes/circle.js":203,"./scenes/oncoming.js":204,"./shaderprogram.js":205,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],197:[function(require,module,exports){
 'use strict';
 
 var Cube = require('./objects/cube.js')
@@ -43562,19 +43435,19 @@ module.exports = function() {
     }
   }
 }
-},{"./camera.js":192,"./gl.js":193,"./objects/cone.js":197,"./objects/cube.js":198,"./objects/cylinder.js":199,"./objects/plane.js":200,"./objects/triangle.js":201,"./shaderprogram.js":204,"./shaders/lambert-fs.js":205,"./shaders/lambert-vs.js":206,"./shaders/marker-fs.js":207,"./shaders/marker-vs.js":208,"./shaders/pixel-vs.js":209,"./shaders/test-fs.js":210,"./shaders/test-vs.js":211,"./shaders/velocity-fs.js":212,"./shaders/velocity-vs.js":213,"./shaders/voronoi-fs.js":214,"./shaders/voronoi-vs.js":215}],197:[function(require,module,exports){
+},{"./camera.js":193,"./gl.js":194,"./objects/cone.js":198,"./objects/cube.js":199,"./objects/cylinder.js":200,"./objects/plane.js":201,"./objects/triangle.js":202,"./shaderprogram.js":205,"./shaders/lambert-fs.js":206,"./shaders/lambert-vs.js":207,"./shaders/marker-fs.js":208,"./shaders/marker-vs.js":209,"./shaders/pixel-vs.js":210,"./shaders/test-fs.js":211,"./shaders/test-vs.js":212,"./shaders/velocity-fs.js":213,"./shaders/velocity-vs.js":214,"./shaders/voronoi-fs.js":215,"./shaders/voronoi-vs.js":216}],198:[function(require,module,exports){
 'use strict'
 
-var CYL_COUNT = 100
+var CYL_COUNT = 150
 var PI = 3.14159265
 var R = 100
-var H = 10
+var H = 5
 
 var vertices = []
 var normals = []
 var indices = []
 var colors = []
-
+var amnt = 0.125
 // top barrel
 for (var i = 0; i < CYL_COUNT; i++) {
   var theta = 2*PI*i / CYL_COUNT
@@ -43592,7 +43465,8 @@ for (var i = 0; i < CYL_COUNT; i++) {
   var theta = 2*PI*i / CYL_COUNT
   var x = Math.cos(theta)
   var z = Math.sin(theta)
-  vertices.push.apply(vertices, [R*x, -H, R*z, 1])
+  var offset = Math.cos(theta/2) * amnt + (1+amnt)
+  vertices.push.apply(vertices, [R*x, -H*offset, R*z, 1])
   normals.push.apply(normals, [x, 0, z, 0])
   colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
 }
@@ -43602,7 +43476,8 @@ for (var i = 0; i < CYL_COUNT; i++) {
   var theta = 2*PI*i / CYL_COUNT
   var x = Math.cos(theta)
   var z = Math.sin(theta)
-  vertices.push.apply(vertices, [R*x, -H, R*z, 1])
+  var offset = Math.cos(theta/2) * amnt + (1+amnt)
+  vertices.push.apply(vertices, [R*x, -H*offset, R*z, 1])
   normals.push.apply(normals, [0, -1, 0, 0])
   colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
 }
@@ -43679,7 +43554,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],198:[function(require,module,exports){
+},{}],199:[function(require,module,exports){
 'use strict'
 
 var cubeVertexPositionBuffer
@@ -43818,7 +43693,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],199:[function(require,module,exports){
+},{}],200:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 20
@@ -43943,7 +43818,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],200:[function(require,module,exports){
+},{}],201:[function(require,module,exports){
 'use strict'
 
 var vertexPositionBuffer
@@ -44017,7 +43892,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],201:[function(require,module,exports){
+},{}],202:[function(require,module,exports){
 'use strict'
 
 var PI = 3.14159265
@@ -44089,7 +43964,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],202:[function(require,module,exports){
+},{}],203:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -44099,10 +43974,10 @@ var RES = 10//Math.ceil(Math.pow(20, 0.3334))//10
 var scene = {
   options: function() {
     return {
-      // originX: -32,
-      // originZ: -32,
-      // sizeX: 64,
-      // sizeZ: 64,
+      originX: -32,
+      originZ: -32,
+      sizeX: 64,
+      sizeZ: 64,
       rightPreference: true,
       markerDensity: 24
     }
@@ -44113,10 +43988,10 @@ var scene = {
   create: function() {
     scene.agents = []
     var PI = 3.14159256
-    var R = 10
+    var R = 30
     var ID = 0;
     
-    for (var a = 0; a < 2*PI; a += 2*PI/20) {
+    for (var a = 0; a < 2*PI; a += 2*PI/100) {
       var hue = a / (2*PI) * 360
       var col = Color('hsv(' + hue + ', 100, 100)')
       
@@ -44128,7 +44003,8 @@ var scene = {
       scene.agents.push({
         pos: vec3.fromValues(R * Math.cos(a), 0, R * Math.sin(a)),
         forward: vec3.fromValues(Math.cos(a + PI), 0, Math.sin(a + PI)),
-        col: vec4.fromValues(idr/RES,idg/RES,idb/RES, 1),//vec4.fromValues(col.red(),col.green(),col.blue(),1),
+        // col: vec4.fromValues(idr/RES,idg/RES,idb/RES, 1),
+        col: vec4.fromValues(col.red(),col.green(),col.blue(),1),
         vel: vec3.create(),
         acc: vec3.create(),
         goal: vec3.fromValues(R * Math.cos(a + PI), 0, R * Math.sin(a + PI)),
@@ -44140,7 +44016,7 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],203:[function(require,module,exports){
+},{"onecolor":4}],204:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -44168,69 +44044,45 @@ var scene = {
 
 
 
-    for (var i = -7.5; i < 7.5; i+=1.5) {
-      var idr = ID % RES
-      var idg = Math.floor(ID / RES) % RES
-      var idb = Math.floor(ID / (RES*RES))
-      ++ID
+    for (var i = -15; i < 15; i+=1) {
+      for (var j = 12; j < 16; j+=2) {
 
-      scene.agents.push({
-        pos: vec3.fromValues(i, 0, -10),
-        forward: vec3.fromValues(0,0,1),
-        col: vec4.fromValues(1,0,0,1),
-        vel: vec3.create(),
-        goal: vec3.fromValues(0, 0, 10),
-        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
-      })
-
-      idr = ID % RES
-      idg = Math.floor(ID / RES) % RES
-      idb = Math.floor(ID / (RES*RES))
-      ++ID
-
-      scene.agents.push({
-        pos: vec3.fromValues(i, 0, -8),
-        forward: vec3.fromValues(0,0,1),
-        col: vec4.fromValues(1,0,0,1),
-        vel: vec3.create(),
-        goal: vec3.fromValues(0, 0, 10),
-        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
-      })
-
-      idr = ID % RES
-      idg = Math.floor(ID / RES) % RES
-      idb = Math.floor(ID / (RES*RES))
-      ++ID
-
-      scene.agents.push({
-        pos: vec3.fromValues(i, 0, 10),
-        forward: vec3.fromValues(0,0,-1),
-        col: vec4.fromValues(0,0,1,1),
-        vel: vec3.create(),
-        goal: vec3.fromValues(0, 0, -10),
-        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
-      })
-
-      idr = ID % RES
-      idg = Math.floor(ID / RES) % RES
-      idb = Math.floor(ID / (RES*RES))
-      ++ID
-
-      scene.agents.push({
-        pos: vec3.fromValues(i, 0, 8),
-        forward: vec3.fromValues(0,0,-1),
-        col: vec4.fromValues(0,0,1,1),
-        vel: vec3.create(),
-        goal: vec3.fromValues(0, 0, -10),
-        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
-      })
       
+        var idr = ID % RES
+        var idg = Math.floor(ID / RES) % RES
+        var idb = Math.floor(ID / (RES*RES))
+        ++ID
+
+        scene.agents.push({
+          pos: vec3.fromValues(i, 0, -j),
+          forward: vec3.fromValues(0,0,1),
+          col: vec4.fromValues(1,0,0,1),
+          vel: vec3.create(),
+          goal: vec3.fromValues(0, 0, 10),
+          id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+        })
+
+        idr = ID % RES
+        idg = Math.floor(ID / RES) % RES
+        idb = Math.floor(ID / (RES*RES))
+        ++ID
+
+        scene.agents.push({
+          pos: vec3.fromValues(i, 0, j),
+          forward: vec3.fromValues(0,0,1),
+          col: vec4.fromValues(0,0,1,1),
+          vel: vec3.create(),
+          goal: vec3.fromValues(0, 0, -10),
+          id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+        })
+
+      }      
     }
   }
 }
 
 module.exports = scene
-},{"onecolor":4}],204:[function(require,module,exports){
+},{"onecolor":4}],205:[function(require,module,exports){
 'use strict';
 
 var ANGLE_initialized = false;
@@ -44410,7 +44262,7 @@ module.exports = function (gl, shaders) {
 
   this.init(shaders);
 }
-},{}],205:[function(require,module,exports){
+},{}],206:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44436,7 +44288,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],206:[function(require,module,exports){
+},{}],207:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44466,7 +44318,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],207:[function(require,module,exports){
+},{}],208:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44483,7 +44335,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],208:[function(require,module,exports){
+},{}],209:[function(require,module,exports){
 'use strict'
 
 var src ='\
@@ -44504,7 +44356,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],209:[function(require,module,exports){
+},{}],210:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44523,7 +44375,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],210:[function(require,module,exports){
+},{}],211:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44542,7 +44394,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],211:[function(require,module,exports){
+},{}],212:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44564,7 +44416,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],212:[function(require,module,exports){
+},{}],213:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44719,7 +44571,7 @@ module.exports = {
   }\
 
   */
-},{}],213:[function(require,module,exports){
+},{}],214:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44739,9 +44591,9 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],214:[function(require,module,exports){
-arguments[4][207][0].apply(exports,arguments)
-},{"dup":207}],215:[function(require,module,exports){
+},{}],215:[function(require,module,exports){
+arguments[4][208][0].apply(exports,arguments)
+},{"dup":208}],216:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44751,14 +44603,38 @@ attribute vec3 vs_velocity;\
 attribute vec3 vs_id;\
 varying vec4 fs_col;\
 uniform mat4 u_ViewProj;\
-void main(void) {\
-  fs_col = vec4(vs_id, 1);\
-  vec3 pos = vec3(vs_pos.x, 0, vs_pos.z);\
-  float fac = 2.0 + dot(normalize(pos), normalize(vs_velocity));\
-  fac = fac / 3.0;\
-  pos = vec3(vs_pos);\
-  gl_Position = u_ViewProj * (vec4(pos,1) + vec4(vs_offset, 0));\
+\
+mat4 rotationMatrix(vec3 axis, float angle)\
+{\
+    axis = normalize(axis);\
+    float s = sin(angle);\
+    float c = cos(angle);\
+    float oc = 1.0 - c;\
+    \
+    return mat4(oc * axis.x * axis.x + c,           oc * axis.x * axis.y - axis.z * s,  oc * axis.z * axis.x + axis.y * s,  0.0,\
+                oc * axis.x * axis.y + axis.z * s,  oc * axis.y * axis.y + c,           oc * axis.y * axis.z - axis.x * s,  0.0,\
+                oc * axis.z * axis.x - axis.y * s,  oc * axis.y * axis.z + axis.x * s,  oc * axis.z * axis.z + c,           0.0,\
+                0.0,                                0.0,                                0.0,                                1.0);\
 }\
+\
+float atan2(in float y, in float x)\
+{\
+    bool s = (abs(x) > abs(y)); \
+    float v1 = 3.14159265/2.0 - atan(x,y);\
+    float v2 = atan(x,y);\
+    return (1.0-float(s))*v1 + float(s)*v2;\
+}\
+\
+void main(void) { \
+  fs_col = vec4(vs_id, 1); \
+  vec3 pos = vec3(vs_pos.x, 0, vs_pos.z); \
+  vec3 vel = normalize(vs_velocity);\
+  mat4 rot = rotationMatrix(vec3(0,1,0), atan2(-vel.z, vel.x)); \
+  float fac = 2.0 + dot(normalize(pos), normalize(vs_velocity)); \
+  fac = fac / 3.0; \
+  pos = vec3(rot * vs_pos); \
+  gl_Position = u_ViewProj * (vec4(pos,1) + vec4(vs_offset, 0)); \
+} \
 '
 
 var type = 'VERT'
@@ -44767,4 +44643,4 @@ module.exports = {
   src: src,
   type: type
 }
-},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215]);
+},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216]);

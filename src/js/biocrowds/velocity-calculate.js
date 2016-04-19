@@ -36,6 +36,7 @@ module.exports = function(options) {
   shaderProgram.unifWeightsTex = gl.getUniformLocation(shaderProgram, "u_weights")
   shaderProgram.R = gl.getUniformLocation(shaderProgram, "u_R")
   shaderProgram.windowSize = gl.getUniformLocation(shaderProgram, "windowSize")
+  shaderProgram.gridScale = gl.getUniformLocation(shaderProgram, "u_gScale")
 
   var positions = [
   -1,-1,0,1,
@@ -168,6 +169,7 @@ module.exports = function(options) {
 
     velocityBufferDirty = true
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.bindTexture(gl.TEXTURE_2D, null)
 
     gl.bindBuffer(gl.ARRAY_BUFFER, v_pos)
     gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW)
@@ -186,26 +188,17 @@ module.exports = function(options) {
     var idx = parseInt(u*options.gridWidth) + options.gridWidth*parseInt(v*options.gridDepth)
     // console.log(velocityBuffer[4*idx], velocityBuffer[4*idx+1], velocityBuffer[4*idx+2], velocityBuffer[4*idx+3])
     var projected = vec4.fromValues(velocityBuffer[4*idx] / 256 * 2 - 1, velocityBuffer[4*idx+1] / 256 * 2 - 1, 0, 0)
-    var len = vec4.length(projected)
+    // console.log(projected[0], projected[1])
     // console.log(len)
     vec4.transformMat4(projected, projected, proj.invviewproj)
     projected[1] = 0
+    // vec3.normalize(projected, projected)
+    // console.log(len)
+    // console.log(projected)
+    var len = Math.max(vec4.length(projected), 4)
     vec3.normalize(projected, projected)
-    vec3.scale(projected, projected, 2*len/0.06)
+    vec3.scale(projected, projected, len*options.gridSize*6)
     return projected
-    /*
-        var idx = parseInt(u*options.gridWidth) + options.gridWidth*parseInt(v*options.gridDepth)
-        console.log(voronoiBuffer)
-        console.log(voronoiBuffer[4*idx], voronoiBuffer[4*idx+1], voronoiBuffer[4*idx+2], voronoiBuffer[4*idx+3])
-        vec3.set(projected, voronoiBuffer[4*idx] / 256 * 2 - 1, voronoiBuffer[4*idx+1] / 256 * 2 - 1, 0)
-        // console.log(projected)
-        vec3.transformMat4(projected, projected, projector.invviewproj)
-        projected[1] = 0;
-        // console.log(projected)
-        vec3.normalize(projected, projected)
-        vec3.copy(agents[i].vel, projected)
-        vec3.copy(agents[i].forward, projected)
-        vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)*/
   }
 
   this.init = function(agents, projector) {
@@ -278,6 +271,7 @@ module.exports = function(options) {
 
     gl.useProgram(shaderProgram);
 
+    gl.uniform1f(shaderProgram.gridScale, options.gridSize)
     gl.uniform1f(gl.getUniformLocation(shaderProgram, "numAgents"), agents.length)
     gl.uniform2f(shaderProgram.windowSize, options.gridWidth, options.gridDepth)
     gl.uniform1i(shaderProgram.unifImage0, 0)

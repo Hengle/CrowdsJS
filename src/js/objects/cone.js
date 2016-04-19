@@ -1,15 +1,15 @@
 'use strict'
 
-var CYL_COUNT = 100
+var CYL_COUNT = 150
 var PI = 3.14159265
 var R = 100
-var H = 10
+var H = 5
 
 var vertices = []
 var normals = []
 var indices = []
 var colors = []
-
+var amnt = 0.125
 // top barrel
 for (var i = 0; i < CYL_COUNT; i++) {
   var theta = 2*PI*i / CYL_COUNT
@@ -27,7 +27,8 @@ for (var i = 0; i < CYL_COUNT; i++) {
   var theta = 2*PI*i / CYL_COUNT
   var x = Math.cos(theta)
   var z = Math.sin(theta)
-  vertices.push.apply(vertices, [R*x, -H, R*z, 1])
+  var offset = Math.cos(theta/2) * amnt + (1+amnt)
+  vertices.push.apply(vertices, [R*x, -H*offset, R*z, 1])
   normals.push.apply(normals, [x, 0, z, 0])
   colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
 }
@@ -37,7 +38,8 @@ for (var i = 0; i < CYL_COUNT; i++) {
   var theta = 2*PI*i / CYL_COUNT
   var x = Math.cos(theta)
   var z = Math.sin(theta)
-  vertices.push.apply(vertices, [R*x, -H, R*z, 1])
+  var offset = Math.cos(theta/2) * amnt + (1+amnt)
+  vertices.push.apply(vertices, [R*x, -H*offset, R*z, 1])
   normals.push.apply(normals, [0, -1, 0, 0])
   colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
 }

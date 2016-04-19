@@ -25,63 +25,39 @@ var scene = {
 
 
 
-    for (var i = -7.5; i < 7.5; i+=1.5) {
-      var idr = ID % RES
-      var idg = Math.floor(ID / RES) % RES
-      var idb = Math.floor(ID / (RES*RES))
-      ++ID
+    for (var i = -15; i < 15; i+=1) {
+      for (var j = 12; j < 16; j+=2) {
 
-      scene.agents.push({
-        pos: vec3.fromValues(i, 0, -10),
-        forward: vec3.fromValues(0,0,1),
-        col: vec4.fromValues(1,0,0,1),
-        vel: vec3.create(),
-        goal: vec3.fromValues(0, 0, 10),
-        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
-      })
-
-      idr = ID % RES
-      idg = Math.floor(ID / RES) % RES
-      idb = Math.floor(ID / (RES*RES))
-      ++ID
-
-      scene.agents.push({
-        pos: vec3.fromValues(i, 0, -8),
-        forward: vec3.fromValues(0,0,1),
-        col: vec4.fromValues(1,0,0,1),
-        vel: vec3.create(),
-        goal: vec3.fromValues(0, 0, 10),
-        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
-      })
-
-      idr = ID % RES
-      idg = Math.floor(ID / RES) % RES
-      idb = Math.floor(ID / (RES*RES))
-      ++ID
-
-      scene.agents.push({
-        pos: vec3.fromValues(i, 0, 10),
-        forward: vec3.fromValues(0,0,-1),
-        col: vec4.fromValues(0,0,1,1),
-        vel: vec3.create(),
-        goal: vec3.fromValues(0, 0, -10),
-        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
-      })
-
-      idr = ID % RES
-      idg = Math.floor(ID / RES) % RES
-      idb = Math.floor(ID / (RES*RES))
-      ++ID
-
-      scene.agents.push({
-        pos: vec3.fromValues(i, 0, 8),
-        forward: vec3.fromValues(0,0,-1),
-        col: vec4.fromValues(0,0,1,1),
-        vel: vec3.create(),
-        goal: vec3.fromValues(0, 0, -10),
-        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
-      })
       
+        var idr = ID % RES
+        var idg = Math.floor(ID / RES) % RES
+        var idb = Math.floor(ID / (RES*RES))
+        ++ID
+
+        scene.agents.push({
+          pos: vec3.fromValues(i, 0, -j),
+          forward: vec3.fromValues(0,0,1),
+          col: vec4.fromValues(1,0,0,1),
+          vel: vec3.create(),
+          goal: vec3.fromValues(0, 0, 10),
+          id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+        })
+
+        idr = ID % RES
+        idg = Math.floor(ID / RES) % RES
+        idb = Math.floor(ID / (RES*RES))
+        ++ID
+
+        scene.agents.push({
+          pos: vec3.fromValues(i, 0, j),
+          forward: vec3.fromValues(0,0,1),
+          col: vec4.fromValues(0,0,1,1),
+          vel: vec3.create(),
+          goal: vec3.fromValues(0, 0, -10),
+          id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+        })
+
+      }      
     }
   }
 }

@@ -9,6 +9,7 @@ uniform float numAgents;
 uniform vec2 windowSize;
 uniform vec2 u_gridSize;
 uniform int drawMode;
+uniform float u_gScale;
 varying vec2 fs_uv;
 const int R = 15;
 
@@ -93,43 +94,28 @@ void main(void) {
   int id = toID(col);
   vec4 data = texture2D(u_image1, vec2(float(id)/(numAgents-0.5), 0.0));
   vec3 pos = vec3(data.xy, 0);
-  vec3 gol = vec3(data.zw, 0);
-  vec3 golVec = gol - pos;
-
 
   if (drawMode == 3) {
-    if (length(golVec) < 0.001) {
-      gl_FragColor = vec4(0.5, 0.5, 0.0, 1.0);
-      return;
-    }
 
     float totalWeight = 0.0;
     for (int i = -R; i < R; i++) {
       for (int j = -R; j < R; j++) {
         vec2 uv = fs_uv + vec2(i, j) / windowSize;
         col = texture2D(u_image0, uv);
-        
-        // bool mask = (id == toID(col));
-
-        // mask = mask && (i != 0 && j != 0);
-
-        // vec3 marker = 2.0*vec3(uv, 0) - vec3(1,1,0);
-        // vec3 markerVec = vec3(uv,0) - pos;
-
-        // mask = mask && (length(markerVec) > 0.0);
-        
-        // float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));
-        // weight = 2.0;
-        // bool mask = length(markerVec) < float(R)  / windowSize.x;
-        // weight = float(mask) * weight;
-        // mask = mask && (weight > 0.0);
+        vec4 wt = texture2D(u_weights, uv);
 
         if (id == toID(col) && i != 0 && j != 0) {
-          vec3 markerVec = vec3(uv,0) - pos;
-          float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));
+          // vec3 markerVec = vec3(uv,0) - pos;
+          // float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));
+          float weight = min(1.0,wt[0]);
           totalWeight += weight;
         }
       }
+    }
+
+    if (totalWeight == 0.0) {
+      gl_FragColor = vec4(0.5, 0.5, 0, 1);
+      return;
     }
 
     vec3 cumul = vec3(0,0,0);
@@ -137,48 +123,24 @@ void main(void) {
       for (int j = -R; j < R; j++) {
         vec2 uv = fs_uv + vec2(i, j) / windowSize;
         col = texture2D(u_image0, uv);
-
-        // bool mask = (id == toID(col));
-        // mask = mask && (i == 0 && j == 0);
-
-        // if (id == toID(col)) {
-          // vec3 marker = 2.0*vec3(uv, 0) - vec3(1,1,0);
-        // vec3 markerVec = vec3(uv,0) - pos;
-        
-        // mask = mask && (length(markerVec) > 0.0);
-        
-        // float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));
-        // bool mask = length(markerVec) < float(R)  / windowSize.x;
-        // weight = float(mask) * weight / totalWeight;
-        // cumul += markerVec * weight;
+        vec4 wt = texture2D(u_weights, uv);
 
         if (id == toID(col) && i != 0 && j != 0) {
-          vec3 markerVec = vec3(uv,0) - pos;  
-          float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));
+          vec3 markerVec = (vec3(uv,0) - pos) * vec3(windowSize[0], windowSize[1], 1) / float(R);  
+          // float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));
+          float weight = min(1.0,wt[0]);
           weight = weight / totalWeight;
           cumul += markerVec * weight;
         }
         // }
       }
     }
-    // vec3 testMarker = vec3(fs_uv + vec2(0, 0) / windowSize, 0);
-    // vec3 testMarkerVec = normalize(testMarker - pos);
-    // float w = 1.0 + dot(normalize(testMarkerVec), normalize(golVec));
     gl_FragColor = vec4(cumul*0.5 + vec3(0.5,0.5,0), 1);
-    return;
-    vec3 o = vec3(fs_uv + vec2(0,0) / windowSize, 0) - pos;
-    o = cumul;
-    // o = vec3(0, w, 0.5);
-    // o = w*testMarkerVec;
-    o = vec3(0,0,totalWeight);
-    // o.y = 0.0;
-    // o.x = 0.0;
-    gl_FragColor = vec4(o*0.5 + vec3(0.5,0.5,0), 1);
-    // gl_FragColor = vec4(cumul.x*0.5 + 0.5, 0.5, 0, 1);
     return;
   }
 
-
+  vec3 gol = vec3(data.zw, 0);
+  vec3 golVec = gol - pos;
   
   vec3 marker = 2.0*vec3(fs_uv, 0) - vec3(1,1,0);
   vec3 markerVec = vec3(fs_uv, 0) - pos;

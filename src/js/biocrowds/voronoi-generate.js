@@ -83,14 +83,23 @@ module.exports = function(GL, projector, options) {
   this.updateBuffers = function() {
     for (var i = 0; i < agents.length; i++) {
       var offset = agents[i].pos
-      offsetArray[3*i] = offset[0]
-      offsetArray[3*i+1] = offset[1]
-      offsetArray[3*i+2] = offset[2]
+      if (agents[i].finished) {
+        offsetArray[3*i] = 99999.0
+        offsetArray[3*i+1] = 99999.0
+        offsetArray[3*i+2] = 99999.0
+      } else {
+        offsetArray[3*i] = offset[0]
+        offsetArray[3*i+1] = offset[1]
+        offsetArray[3*i+2] = offset[2]
+      }
 
       offset = agents[i].forward
       velocityArray[3*i] = offset[0]
       velocityArray[3*i+1] = offset[1]
       velocityArray[3*i+2] = offset[2]
+
+      // vec3.normalize(offset, offset)
+      // console.log(Math.atan2(-offset[2], offset[1]))
     }
     GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
     GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
