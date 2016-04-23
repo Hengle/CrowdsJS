@@ -20527,12 +20527,7 @@ var defaultOptions = {
   originZ: -16,
   sizeX: 32,
   sizeZ: 32,
-  markerDensity: 10,
-  // gridSize: 0.0625,
   gridSize: 0.125,
-  searchRadius: 3,
-  rightPreference: false,
-  drawMarkers: false
 }
 
 var BioCrowds = function(gl, options) {
@@ -43916,9 +43911,7 @@ var scene = {
       originX: -32,
       originZ: -32,
       sizeX: 64,
-      sizeZ: 64,
-      rightPreference: true,
-      markerDensity: 24
+      sizeZ: 64
     }
   },
 
@@ -43965,13 +43958,10 @@ var RES = 10
 var scene = {
   options: function() {
     return {
-      rightPreference: true,
-      searchRadius: 2,
       originX: -16,
       originZ: -16,
       sizeX: 32,
       sizeZ: 32,
-      markerDensity: 24
     }
   },
 

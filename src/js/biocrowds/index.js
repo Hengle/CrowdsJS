@@ -19,12 +19,7 @@ var defaultOptions = {
   originZ: -16,
   sizeX: 32,
   sizeZ: 32,
-  markerDensity: 10,
-  // gridSize: 0.0625,
   gridSize: 0.125,
-  searchRadius: 3,
-  rightPreference: false,
-  drawMarkers: false
 }
 
 var BioCrowds = function(gl, options) {
