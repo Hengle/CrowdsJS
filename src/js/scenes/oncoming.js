@@ -7,13 +7,10 @@ var RES = 10
 var scene = {
   options: function() {
     return {
-      rightPreference: true,
-      searchRadius: 2,
       originX: -16,
       originZ: -16,
       sizeX: 32,
       sizeZ: 32,
-      markerDensity: 24
     }
   },
 

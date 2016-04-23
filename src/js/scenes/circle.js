@@ -10,9 +10,7 @@ var scene = {
       originX: -32,
       originZ: -32,
       sizeX: 64,
-      sizeZ: 64,
-      rightPreference: true,
-      markerDensity: 24
+      sizeZ: 64
     }
   },
 
