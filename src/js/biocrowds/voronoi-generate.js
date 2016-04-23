@@ -1,25 +1,35 @@
 'use strict'
 
 var Cone = require('../objects/cone.js')
+var SkewedCone = require('../objects/skewed-cone.js')
+var GL = require('../gl.js')
 
-module.exports = function(GL, projector, options) {
-  var voronoiFBO = GL.createFramebuffer()
-  GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiFBO);
-  var rttTexture = GL.createTexture();
-  GL.bindTexture(GL.TEXTURE_2D, rttTexture);
-  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
-  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
-  GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, options.gridWidth, options.gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
+module.exports = function(options) {
+  var gl = GL.get()
+  var ext = gl.getExtension("ANGLE_instanced_arrays")
 
-  var renderbuffer = GL.createRenderbuffer();
-  GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
-  GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
-  GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, rttTexture, 0)
-  GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
+  var shaderProgram = gl.createProgram()
+  gl.attachShader(shaderProgram, GL.getShader(voronoi_vertex_shader_src, gl.VERTEX_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(voronoi_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.linkProgram(shaderProgram)
 
-  GL.bindFramebuffer(GL.FRAMEBUFFER, null)
-  GL.bindRenderbuffer(GL.RENDERBUFFER, null)
-  GL.bindTexture(GL.TEXTURE_2D, null)
+  shaderProgram.attrPos = gl.getAttribLocation(shaderProgram, "vs_pos")
+  shaderProgram.attrCol = gl.getAttribLocation(shaderProgram, "vs_col")
+  shaderProgram.attrNor = gl.getAttribLocation(shaderProgram, "vs_nor")
+
+  shaderProgram.unifViewProj = gl.getUniformLocation(shaderProgram, "u_ViewProj")
+  
+  shaderProgram.attrOffset = gl.getAttribLocation(shaderProgram, "vs_offset")
+  shaderProgram.attrVelocity = gl.getAttribLocation(shaderProgram, "vs_velocity")
+  shaderProgram.attrId = gl.getAttribLocation(shaderProgram, "vs_id")
+
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    alert("Could not link program!");
+  }
+
+  var voronoi_tex = GL.makeTexture(options.gridWidth, options.gridDepth)
+  this.tex = voronoi_tex.tex
+  this.fbo = voronoi_tex.fbo
 
   var offsetArray
   var offsetBuffer
@@ -27,6 +37,7 @@ module.exports = function(GL, projector, options) {
   var velocityBuffer
   var sprites
   var agents
+
   this.initAgentBuffers = function(theagents) {
     agents = theagents
 
@@ -48,22 +59,27 @@ module.exports = function(GL, projector, options) {
       ids.push.apply(ids, agents[i].id)
     }
 
-    var cone = Cone.get()
-    offsetBuffer = GL.createBuffer()
-    GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
-    GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+    var cone
+    if (options.sim.rightPreference) {
+      cone = SkewedCone.get()
+    } else {
+      cone = Cone.get()
+    }
+    offsetBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, offsetBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, offsetArray, gl.DYNAMIC_DRAW)
     offsetBuffer.itemSize = 3
     offsetBuffer.numItems = agents.length
 
-    velocityBuffer = GL.createBuffer()
-    GL.bindBuffer(GL.ARRAY_BUFFER, velocityBuffer)
-    GL.bufferData(GL.ARRAY_BUFFER, velocityArray, GL.DYNAMIC_DRAW)
+    velocityBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocityBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, velocityArray, gl.DYNAMIC_DRAW)
     offsetBuffer.itemSize = 3
     offsetBuffer.numItems = agents.length
 
-    var idBuffer = GL.createBuffer()
-    GL.bindBuffer(GL.ARRAY_BUFFER, idBuffer)
-    GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(ids), GL.DYNAMIC_DRAW)
+    var idBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, idBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ids), gl.DYNAMIC_DRAW)
     idBuffer.itemSize = 3
     idBuffer.numItems = agents.length
 
@@ -98,17 +114,83 @@ module.exports = function(GL, projector, options) {
       velocityArray[3*i+1] = offset[1]
       velocityArray[3*i+2] = offset[2]
 
-      // vec3.normalize(offset, offset)
-      // console.log(Math.atan2(-offset[2], offset[1]))
     }
-    GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
-    GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+    gl.bindBuffer(gl.ARRAY_BUFFER, offsetBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, offsetArray, gl.DYNAMIC_DRAW)
 
-    GL.bindBuffer(GL.ARRAY_BUFFER, velocityBuffer)
-    GL.bufferData(GL.ARRAY_BUFFER, velocityArray, GL.DYNAMIC_DRAW)
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocityBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, velocityArray, gl.DYNAMIC_DRAW)
   }
 
-  this.buffer = function() {
-    return sprites
+  this.draw = function() {
+    gl.useProgram(shaderProgram)
+
+    if (shaderProgram.attrPos != -1 && sprites.positions) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.positions)
+      gl.enableVertexAttribArray(shaderProgram.attrPos);
+      gl.vertexAttribPointer(shaderProgram.attrPos, 4, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrPos, 0);
+    }
+    if (shaderProgram.attrNor != -1 && sprites.normals) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.normals)
+      gl.enableVertexAttribArray(shaderProgram.attrNor);
+      gl.vertexAttribPointer(shaderProgram.attrNor, 4, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrNor, 0);
+    }
+    if (shaderProgram.attrCol != -1 && sprites.colors) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.colors)
+      gl.enableVertexAttribArray(shaderProgram.attrCol);
+      gl.vertexAttribPointer(shaderProgram.attrCol, 4, gl.FLOAT, true, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrCol, 0);
+    }
+
+    if (shaderProgram.attrOffset != -1 && sprites.offsets) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.offsets)
+      gl.enableVertexAttribArray(shaderProgram.attrOffset)
+      gl.vertexAttribPointer(shaderProgram.attrOffset, 3, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrOffset, 1);
+    }
+    if (shaderProgram.attrVelocity != -1 && sprites.velocities) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.velocities)
+      gl.enableVertexAttribArray(shaderProgram.attrVelocity)
+      gl.vertexAttribPointer(shaderProgram.attrVelocity, 3, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrVelocity, 1);
+    }
+    if (shaderProgram.attrId != -1 && sprites.ids) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.ids)
+      gl.enableVertexAttribArray(shaderProgram.attrId)
+      gl.vertexAttribPointer(shaderProgram.attrId, 3, gl.FLOAT, false, 0, 0); 
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrId, 1);
+    }
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sprites.indices);
+    ext.drawElementsInstancedANGLE(sprites.drawMode, sprites.count, gl.UNSIGNED_SHORT, 0, sprites.ids.numItems);
+
+    if (shaderProgram.attrPos != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrPos)
+    }
+    if (shaderProgram.attrNor != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrNor)
+    }
+    if (shaderProgram.attrCol != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrCol)
+    }
+
+    if (shaderProgram.attrOffset != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrOffset)
+    }
+    if (shaderProgram.attrVelocity != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrVelocity)
+    }
+    if (shaderProgram.attrId != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrId)
+    }
+  }
+
+  this.setViewProj = function(matrix) {
+    gl.useProgram(shaderProgram);
+    if (shaderProgram.unifViewProj != -1) {
+      gl.uniformMatrix4fv(shaderProgram.unifViewProj, false, matrix);
+    }
   }
 }

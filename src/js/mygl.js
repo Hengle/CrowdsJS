@@ -4,6 +4,7 @@ var Cube = require('./objects/cube.js')
 var Plane = require('./objects/plane.js')
 var Cylinder = require('./objects/cylinder.js')
 var Cone = require('./objects/cone.js')
+var SkewedCone = require('./objects/skewed-cone.js')
 var Triangle = require('./objects/triangle.js')
 var ShaderProgram = require('./shaderprogram.js')
 var Camera = require('./camera.js')
@@ -45,6 +46,7 @@ module.exports = function() {
     Cylinder.create(gl)
     Triangle.create(gl)
     Cone.create(gl)
+    SkewedCone.create(gl)
 
     gl.lineWidth(1.0)
     
@@ -132,15 +134,16 @@ module.exports = function() {
     this.draw()
   }
 
+  this.viewProj = mat4.create()
+
   this.draw = function () {
     gl.clearColor(0.2, 0.2, 0.2, 1.0)
     gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-    var viewProj = mat4.create();
-    cam.viewProj(viewProj);
-    this.Lambert.setViewProj(viewProj);
-    this.MarkerShader.setViewProj(viewProj);
+    cam.viewProj(this.viewProj);
+    this.Lambert.setViewProj(this.viewProj);
+    this.MarkerShader.setViewProj(this.viewProj);
 
     /*var model = mat4.create();
     var plane = {

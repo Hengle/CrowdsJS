@@ -4,6 +4,7 @@ var vertexPositionBuffer
 var vertexColorBuffer
 var vertexNormalBuffer
 var vertexIndexBuffer
+var vertexUVBuffer
 
 var vertices = [
   -0.5,  0.0, -0.5, 1.0,
@@ -24,6 +25,13 @@ var colors = [
   0.8, 0.8, 0.8, 1.0,
   0.8, 0.8, 0.8, 1.0,
   0.8, 0.8, 0.8, 1.0
+]
+
+var uvs = [
+  0,1,
+  0,0,
+  1,0,
+  1,1
 ]
 
 var indices = [
@@ -63,10 +71,17 @@ module.exports = {
     vertexIndexBuffer.itemSize = 1
     vertexIndexBuffer.numItems = 6
 
+    vertexUVBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexUVBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(uvs), gl.STATIC_DRAW)
+    vertexUVBuffer.itemSize = 2
+    vertexUVBuffer.numItems = 4
+
     Geo.positions = vertexPositionBuffer
     Geo.normals = vertexNormalBuffer
     Geo.colors = vertexColorBuffer
     Geo.indices = vertexIndexBuffer
+    Geo.uvs = vertexUVBuffer
     Geo.count = 6
     Geo.drawMode = gl.TRIANGLES
   }

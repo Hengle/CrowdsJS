@@ -20749,6 +20749,7 @@ var VoronoiGenerator = require('./voronoi-generate')
 var Projector = require('./projector')
 var VelocityCalculator = require('./velocity-calculate')
 var VoronoiRefine = require('./voronoi-refine')
+var TexturedPlane = require('./textured-plane')
 
 var defaultOptions = {
   originX: -16,
@@ -20879,9 +20880,8 @@ var BioCrowds = function(gl, options) {
   var voronoiGenerator
   var velocityCalculator
   var voronoiRefine
-  var voronoi_texture
-  var voronoi_fbo
-  var velocity_fbo
+  var groundPlane
+  var groundPlaneObj
 
   var bioCrowds = {
     init: function() {
@@ -20890,71 +20890,40 @@ var BioCrowds = function(gl, options) {
       var GL = gl.getGL()
       projector = new Projector(options)
       blockGenerator = new BlockGenerator(GL, projector, options)
-      voronoiGenerator = new VoronoiGenerator(GL, projector, options)
+      // voronoiGenerator = new VoronoiGenerator(GL, projector, options)
+      voronoiGenerator = new VoronoiGenerator(options)
       velocityCalculator = new VelocityCalculator(options)
       voronoiRefine = new VoronoiRefine(options)
 
       var planeTrans = mat4.create()
       mat4.scale(planeTrans, planeTrans, vec3.fromValues(options.sizeX, 1, options.sizeZ))
       var planeCol = vec4.fromValues(0.8,0.8,0.8,1)
+
+      groundPlaneObj = new TexturedPlane(options)
       var groundPlane = {
         draw: function() {
-          gl.Lambert.setColor(planeCol),
-          gl.Lambert.setModelMat(planeTrans),
-          gl.Lambert.draw(Plane.get())   
+          groundPlaneObj.setViewProj(gl.viewProj)
+          groundPlaneObj.setModelMat(planeTrans)
+          groundPlaneObj.draw()
         }
       }
-      drawables.push(groundPlane)
       gl.drawables.push(groundPlane)
+      drawables.push(groundPlane)
 
-      voronoi_texture = GL.createTexture()
-      GL.bindTexture(GL.TEXTURE_2D, voronoi_texture)
-      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
-      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
+      this.applyOptions()
+    },
 
-      GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, options.gridWidth, options.gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
-
-      voronoi_fbo = GL.createFramebuffer()
-      GL.bindFramebuffer(GL.FRAMEBUFFER, voronoi_fbo)
-
-      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, voronoi_texture, 0)
-
-      var renderbuffer = GL.createRenderbuffer();
-      GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
-      GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
-
-      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, voronoi_texture, 0)
-      GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
-
-      // ---------------------------------------------------------
-
-      var velocity_texture = GL.createTexture()
-
-      GL.bindTexture(GL.TEXTURE_2D, velocity_texture)
-      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
-      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
-
-      GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, options.gridWidth, options.gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
-
-      velocity_fbo = GL.createFramebuffer()
-      GL.bindFramebuffer(GL.FRAMEBUFFER, velocity_fbo)
-
-      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, velocity_texture, 0)
-
-      renderbuffer = GL.createRenderbuffer();
-      GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
-      GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
-
-      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, velocity_texture, 0)
-      GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
-
-      // ------------------------------------------------------------------------------------
-
-      GL.bindTexture(GL.TEXTURE_2D, null)
-      GL.bindRenderbuffer(GL.RENDERBUFFER, null)
-      GL.bindFramebuffer(GL.FRAMEBUFFER, null)
-
-      // bioCrowds.setupMarkerBuffers()
+    applyOptions: function() {
+      if (!options.vis.groundPlane) {
+        groundPlaneObj.setTexture(null)  
+      } else if (options.vis.groundPlane == 'voronoi') {
+        groundPlaneObj.setTexture(voronoiGenerator.tex)
+      } else if (options.vis.groundPlane == 'voronoi-refine') {
+        groundPlaneObj.setTexture(voronoiRefine.tex)
+      } else if (options.vis.groundPlane == 'weights') {
+        groundPlaneObj.setTexture(velocityCalculator.tex)
+      }
+      voronoiGenerator.initAgentBuffers(agents)
     },
 
     deinit: function() {
@@ -21025,7 +20994,7 @@ var BioCrowds = function(gl, options) {
     step: function(t) {
       var GL = gl.getGL()
 
-      gl.VoronoiShader.setViewProj(projector.viewproj)
+      /*gl.VoronoiShader.setViewProj(projector.viewproj)
 
       GL.bindFramebuffer(GL.FRAMEBUFFER, voronoi_fbo)
       GL.viewport(0, 0, options.gridWidth, options.gridDepth)
@@ -21035,14 +21004,26 @@ var BioCrowds = function(gl, options) {
       GL.bindFramebuffer(GL.FRAMEBUFFER, null)
       GL.viewport(0, 0, 150, 150)
       GL.clear( GL.DEPTH_BUFFER_BIT )
-      gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)
+      gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)*/
+      voronoiGenerator.setViewProj(projector.viewproj)
+
+      GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiGenerator.fbo)
+      GL.viewport(0, 0, options.gridWidth, options.gridDepth)
+      GL.clear( GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
+      voronoiGenerator.draw()
+
+      GL.bindFramebuffer(GL.FRAMEBUFFER, null)
+      GL.viewport(0, 0, 150, 150)
+      GL.clear( GL.DEPTH_BUFFER_BIT )
+      voronoiGenerator.draw()
 
       GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiRefine.fbo)
       GL.viewport(0, 0, options.gridWidth, options.gridDepth)
-      voronoiRefine.draw(voronoi_texture)
+      voronoiRefine.draw(voronoiGenerator.tex)
+
       GL.bindFramebuffer(GL.FRAMEBUFFER, null)
       GL.viewport(150, 0, 150, 150)
-      voronoiRefine.draw(voronoi_texture)
+      voronoiRefine.draw(voronoiGenerator.tex)
 
       velocityCalculator.setupDraw(agents, projector.viewproj, voronoiRefine.tex)
       GL.viewport(300, 0, 150, 150)
@@ -21084,7 +21065,7 @@ var BioCrowds = function(gl, options) {
 }
 
 module.exports = BioCrowds
-},{"../lib/sobol.js":195,"../objects/cone.js":198,"../objects/cube.js":199,"../objects/cylinder.js":200,"../objects/plane.js":201,"../objects/triangle.js":202,"../shaderprogram.js":205,"./block-generate":186,"./projector":189,"./velocity-calculate":190,"./voronoi-generate":191,"./voronoi-refine":192}],189:[function(require,module,exports){
+},{"../lib/sobol.js":196,"../objects/cone.js":199,"../objects/cube.js":200,"../objects/cylinder.js":201,"../objects/plane.js":202,"../objects/triangle.js":204,"../shaderprogram.js":207,"./block-generate":186,"./projector":189,"./textured-plane":190,"./velocity-calculate":191,"./voronoi-generate":192,"./voronoi-refine":193}],189:[function(require,module,exports){
 'use strict'
 
 module.exports = function(options) {
@@ -21124,28 +21105,127 @@ module.exports = function(options) {
 'use strict'
 
 var GL = require('../gl.js')
+var Plane = require('../objects/plane.js')
 
 module.exports = function(options) {
   var gl = GL.get()
   var ext = gl.getExtension("ANGLE_instanced_arrays")
 
-  var getShader = function(source, type) {
-    var shader = gl.createShader(type)
+  var modelMat = mat4.create()
+  var invTrMat = mat4.create()
+  var viewProjMat = mat4.create()
 
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      alert(gl.getShaderInfoLog(shader));
-      return null;
-    }
-
-    return shader;
-  }
 
   var shaderProgram = gl.createProgram()
-  gl.attachShader(shaderProgram, getShader(velocity_vertex_shader_src, gl.VERTEX_SHADER))
-  gl.attachShader(shaderProgram, getShader(velocity_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(texture_vertex_shader_src, gl.VERTEX_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(texture_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.linkProgram(shaderProgram)
+
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    alert("Could not link program!")
+  }
+
+  var attrPos = gl.getAttribLocation(shaderProgram, "vs_pos")
+  var attrNor = gl.getAttribLocation(shaderProgram, "vs_nor")
+  var attrUv = gl.getAttribLocation(shaderProgram, "vs_uv")
+  var unifImage = gl.getUniformLocation(shaderProgram, "u_image")
+  var unifBound = gl.getUniformLocation(shaderProgram, "textureBound")
+
+  shaderProgram.unifViewProj = gl.getUniformLocation(shaderProgram, "u_ViewProj")
+  shaderProgram.unifModel = gl.getUniformLocation(shaderProgram, "u_Model")
+  shaderProgram.unifInvTrans = gl.getUniformLocation(shaderProgram, "u_InvTrans")
+
+  // var uv_coords = new Float32Array([
+  //   0,0,
+  //   0,1,
+  //   1,1,
+  //   1,0
+  // ])
+  // var uvs = gl.createBuffer()
+  // gl.bindBuffer(gl.ARRAY_BUFFER, uvs)
+  // gl.bufferData(gl.ARRAY_BUFFER, uv_coords, gl.STATIC_DRAW)
+  // uvs.itemSize = 2
+  // uvs.numItems = 4
+
+  this.draw = function() {
+    var plane = Plane.get()
+    // mat4.identity(modelMat)
+    // mat4.scale(planeTrans, planeTrans, vec3.fromValues(options.sizeX, 1, options.sizeZ))
+    // console.log(plane)
+
+    gl.useProgram(shaderProgram)
+
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, this.tex)
+    gl.uniform1i(unifImage, 0)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, plane.positions)
+    gl.enableVertexAttribArray(attrPos)
+    gl.vertexAttribPointer(attrPos, 4, gl.FLOAT, false, 0, 0)
+    ext.vertexAttribDivisorANGLE(attrPos, 0)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, plane.normals)
+    gl.enableVertexAttribArray(attrNor)
+    gl.vertexAttribPointer(attrNor, 4, gl.FLOAT, false, 0, 0)
+    ext.vertexAttribDivisorANGLE(attrNor, 0)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, plane.uvs)
+    gl.enableVertexAttribArray(attrUv)
+    gl.vertexAttribPointer(attrUv, 2, gl.FLOAT, true, 0, 0)
+    ext.vertexAttribDivisorANGLE(attrUv, 0)
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, plane.indices)
+    gl.drawElements(plane.drawMode, plane.count, gl.UNSIGNED_SHORT, 0)
+
+    gl.disableVertexAttribArray(attrPos)
+    gl.disableVertexAttribArray(attrNor)
+    gl.disableVertexAttribArray(attrUv)
+  }
+
+  this.setViewProj = function(matrix) {
+    gl.useProgram(shaderProgram);
+    viewProjMat = matrix;
+    if (shaderProgram.unifViewProj != -1) {
+      gl.uniformMatrix4fv(shaderProgram.unifViewProj, false, viewProjMat);
+    }
+  }
+
+  this.setModelMat = function(matrix) {
+    gl.useProgram(shaderProgram);
+    modelMat = matrix;
+    mat4.transpose(invTrMat, modelMat);
+    mat4.invert(invTrMat, invTrMat);
+    if (shaderProgram.unifModel != -1) {
+      gl.uniformMatrix4fv(shaderProgram.unifModel, false, modelMat);
+    }
+    if (shaderProgram.unifInvTrans != -1) {
+      gl.uniformMatrix4fv(shaderProgram.unifInvTrans, false, invTrMat);
+    }
+  }
+
+  this.setTexture = function(tex) {
+    gl.useProgram(shaderProgram)
+    if (tex) {
+      gl.uniform1f(unifBound, true)
+    } else {
+      gl.uniform1f(unifBound, false)
+    }
+    this.tex = tex
+  }
+}
+
+},{"../gl.js":195,"../objects/plane.js":202}],191:[function(require,module,exports){
+'use strict'
+
+var GL = require('../gl.js')
+
+module.exports = function(options) {
+  var gl = GL.get()
+  var ext = gl.getExtension("ANGLE_instanced_arrays")
+
+  var shaderProgram = gl.createProgram()
+  gl.attachShader(shaderProgram, GL.getShader(velocity_vertex_shader_src, gl.VERTEX_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(velocity_fragment_shader_src, gl.FRAGMENT_SHADER))
   gl.linkProgram(shaderProgram)
 
   if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
@@ -21196,37 +21276,10 @@ module.exports = function(options) {
   gl.getExtension('OES_texture_float')
   gl.getExtension('OES_float_linear')
 
-  var makeTexture = function() {
-    var weight_texture = gl.createTexture()
-    gl.bindTexture(gl.TEXTURE_2D, weight_texture)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, options.gridWidth, options.gridDepth, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+  var weight_tex = GL.makeTexture(options.gridWidth, options.gridDepth)
+  var velocity_tex = GL.makeTexture(options.gridWidth, options.gridDepth)
 
-    var weight_fbo = gl.createFramebuffer()
-    gl.bindFramebuffer(gl.FRAMEBUFFER, weight_fbo)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, weight_texture, 0)
-
-    var weight_rbo = gl.createRenderbuffer()
-    gl.bindRenderbuffer(gl.RENDERBUFFER, weight_rbo)
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
-
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, weight_texture, 0)
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, weight_rbo)
-
-    gl.bindTexture(gl.TEXTURE_2D, null)
-    gl.bindRenderbuffer(gl.RENDERBUFFER, null)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-
-    return {
-      tex: weight_texture,
-      fbo: weight_fbo,
-      rbo: weight_rbo
-    }
-  }
-
-  var weight_tex = makeTexture()
-  var velocity_tex = makeTexture()
+  this.tex = weight_tex.tex
 
   this.drawWeights = function() {
     gl.useProgram(shaderProgram)
@@ -21426,29 +21479,39 @@ module.exports = function(options) {
     gl.disableVertexAttribArray(shaderProgram.attrUv)
   }
 }
-},{"../gl.js":194}],191:[function(require,module,exports){
+},{"../gl.js":195}],192:[function(require,module,exports){
 'use strict'
 
 var Cone = require('../objects/cone.js')
+var SkewedCone = require('../objects/skewed-cone.js')
+var GL = require('../gl.js')
 
-module.exports = function(GL, projector, options) {
-  var voronoiFBO = GL.createFramebuffer()
-  GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiFBO);
-  var rttTexture = GL.createTexture();
-  GL.bindTexture(GL.TEXTURE_2D, rttTexture);
-  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
-  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
-  GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, options.gridWidth, options.gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
+module.exports = function(options) {
+  var gl = GL.get()
+  var ext = gl.getExtension("ANGLE_instanced_arrays")
 
-  var renderbuffer = GL.createRenderbuffer();
-  GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
-  GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
-  GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, rttTexture, 0)
-  GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
+  var shaderProgram = gl.createProgram()
+  gl.attachShader(shaderProgram, GL.getShader(voronoi_vertex_shader_src, gl.VERTEX_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(voronoi_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.linkProgram(shaderProgram)
 
-  GL.bindFramebuffer(GL.FRAMEBUFFER, null)
-  GL.bindRenderbuffer(GL.RENDERBUFFER, null)
-  GL.bindTexture(GL.TEXTURE_2D, null)
+  shaderProgram.attrPos = gl.getAttribLocation(shaderProgram, "vs_pos")
+  shaderProgram.attrCol = gl.getAttribLocation(shaderProgram, "vs_col")
+  shaderProgram.attrNor = gl.getAttribLocation(shaderProgram, "vs_nor")
+
+  shaderProgram.unifViewProj = gl.getUniformLocation(shaderProgram, "u_ViewProj")
+  
+  shaderProgram.attrOffset = gl.getAttribLocation(shaderProgram, "vs_offset")
+  shaderProgram.attrVelocity = gl.getAttribLocation(shaderProgram, "vs_velocity")
+  shaderProgram.attrId = gl.getAttribLocation(shaderProgram, "vs_id")
+
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    alert("Could not link program!");
+  }
+
+  var voronoi_tex = GL.makeTexture(options.gridWidth, options.gridDepth)
+  this.tex = voronoi_tex.tex
+  this.fbo = voronoi_tex.fbo
 
   var offsetArray
   var offsetBuffer
@@ -21456,6 +21519,7 @@ module.exports = function(GL, projector, options) {
   var velocityBuffer
   var sprites
   var agents
+
   this.initAgentBuffers = function(theagents) {
     agents = theagents
 
@@ -21477,22 +21541,27 @@ module.exports = function(GL, projector, options) {
       ids.push.apply(ids, agents[i].id)
     }
 
-    var cone = Cone.get()
-    offsetBuffer = GL.createBuffer()
-    GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
-    GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+    var cone
+    if (options.sim.rightPreference) {
+      cone = SkewedCone.get()
+    } else {
+      cone = Cone.get()
+    }
+    offsetBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, offsetBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, offsetArray, gl.DYNAMIC_DRAW)
     offsetBuffer.itemSize = 3
     offsetBuffer.numItems = agents.length
 
-    velocityBuffer = GL.createBuffer()
-    GL.bindBuffer(GL.ARRAY_BUFFER, velocityBuffer)
-    GL.bufferData(GL.ARRAY_BUFFER, velocityArray, GL.DYNAMIC_DRAW)
+    velocityBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocityBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, velocityArray, gl.DYNAMIC_DRAW)
     offsetBuffer.itemSize = 3
     offsetBuffer.numItems = agents.length
 
-    var idBuffer = GL.createBuffer()
-    GL.bindBuffer(GL.ARRAY_BUFFER, idBuffer)
-    GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(ids), GL.DYNAMIC_DRAW)
+    var idBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, idBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ids), gl.DYNAMIC_DRAW)
     idBuffer.itemSize = 3
     idBuffer.numItems = agents.length
 
@@ -21527,21 +21596,87 @@ module.exports = function(GL, projector, options) {
       velocityArray[3*i+1] = offset[1]
       velocityArray[3*i+2] = offset[2]
 
-      // vec3.normalize(offset, offset)
-      // console.log(Math.atan2(-offset[2], offset[1]))
     }
-    GL.bindBuffer(GL.ARRAY_BUFFER, offsetBuffer)
-    GL.bufferData(GL.ARRAY_BUFFER, offsetArray, GL.DYNAMIC_DRAW)
+    gl.bindBuffer(gl.ARRAY_BUFFER, offsetBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, offsetArray, gl.DYNAMIC_DRAW)
 
-    GL.bindBuffer(GL.ARRAY_BUFFER, velocityBuffer)
-    GL.bufferData(GL.ARRAY_BUFFER, velocityArray, GL.DYNAMIC_DRAW)
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocityBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, velocityArray, gl.DYNAMIC_DRAW)
   }
 
-  this.buffer = function() {
-    return sprites
+  this.draw = function() {
+    gl.useProgram(shaderProgram)
+
+    if (shaderProgram.attrPos != -1 && sprites.positions) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.positions)
+      gl.enableVertexAttribArray(shaderProgram.attrPos);
+      gl.vertexAttribPointer(shaderProgram.attrPos, 4, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrPos, 0);
+    }
+    if (shaderProgram.attrNor != -1 && sprites.normals) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.normals)
+      gl.enableVertexAttribArray(shaderProgram.attrNor);
+      gl.vertexAttribPointer(shaderProgram.attrNor, 4, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrNor, 0);
+    }
+    if (shaderProgram.attrCol != -1 && sprites.colors) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.colors)
+      gl.enableVertexAttribArray(shaderProgram.attrCol);
+      gl.vertexAttribPointer(shaderProgram.attrCol, 4, gl.FLOAT, true, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrCol, 0);
+    }
+
+    if (shaderProgram.attrOffset != -1 && sprites.offsets) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.offsets)
+      gl.enableVertexAttribArray(shaderProgram.attrOffset)
+      gl.vertexAttribPointer(shaderProgram.attrOffset, 3, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrOffset, 1);
+    }
+    if (shaderProgram.attrVelocity != -1 && sprites.velocities) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.velocities)
+      gl.enableVertexAttribArray(shaderProgram.attrVelocity)
+      gl.vertexAttribPointer(shaderProgram.attrVelocity, 3, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrVelocity, 1);
+    }
+    if (shaderProgram.attrId != -1 && sprites.ids) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, sprites.ids)
+      gl.enableVertexAttribArray(shaderProgram.attrId)
+      gl.vertexAttribPointer(shaderProgram.attrId, 3, gl.FLOAT, false, 0, 0); 
+      ext.vertexAttribDivisorANGLE(shaderProgram.attrId, 1);
+    }
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sprites.indices);
+    ext.drawElementsInstancedANGLE(sprites.drawMode, sprites.count, gl.UNSIGNED_SHORT, 0, sprites.ids.numItems);
+
+    if (shaderProgram.attrPos != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrPos)
+    }
+    if (shaderProgram.attrNor != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrNor)
+    }
+    if (shaderProgram.attrCol != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrCol)
+    }
+
+    if (shaderProgram.attrOffset != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrOffset)
+    }
+    if (shaderProgram.attrVelocity != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrVelocity)
+    }
+    if (shaderProgram.attrId != -1) {
+      gl.disableVertexAttribArray(shaderProgram.attrId)
+    }
+  }
+
+  this.setViewProj = function(matrix) {
+    gl.useProgram(shaderProgram);
+    if (shaderProgram.unifViewProj != -1) {
+      gl.uniformMatrix4fv(shaderProgram.unifViewProj, false, matrix);
+    }
   }
 }
-},{"../objects/cone.js":198}],192:[function(require,module,exports){
+},{"../gl.js":195,"../objects/cone.js":199,"../objects/skewed-cone.js":203}],193:[function(require,module,exports){
 'use strict'
 
 var GL = require('../gl.js')
@@ -21550,23 +21685,9 @@ module.exports = function(options) {
   var gl = GL.get()
   var ext = gl.getExtension("ANGLE_instanced_arrays")
 
-  var getShader = function(source, type) {
-    var shader = gl.createShader(type)
-
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      alert(gl.getShaderInfoLog(shader));
-      return null;
-    }
-
-    return shader;
-  }
-
   var shaderProgram = gl.createProgram()
-  gl.attachShader(shaderProgram, getShader(voronoi_refine_vertex_shader_src, gl.VERTEX_SHADER))
-  gl.attachShader(shaderProgram, getShader(voronoi_refine_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(voronoi_refine_vertex_shader_src, gl.VERTEX_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(voronoi_refine_fragment_shader_src, gl.FRAGMENT_SHADER))
   gl.linkProgram(shaderProgram)
 
   if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
@@ -21611,36 +21732,7 @@ module.exports = function(options) {
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idx)
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW)
 
-  var makeTexture = function() {
-    var texture = gl.createTexture()
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, options.gridWidth, options.gridDepth, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
-
-    var fbo = gl.createFramebuffer()
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
-
-    var rbo = gl.createRenderbuffer()
-    gl.bindRenderbuffer(gl.RENDERBUFFER, rbo)
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
-
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rbo)
-
-    gl.bindTexture(gl.TEXTURE_2D, null)
-    gl.bindRenderbuffer(gl.RENDERBUFFER, null)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-
-    return {
-      tex: texture,
-      fbo: fbo,
-      rbo: rbo
-    }
-  }
-
-  var refined_tex = makeTexture()
+  var refined_tex = GL.makeTexture(options.gridWidth, options.gridDepth)
 
   this.tex = refined_tex.tex
   this.fbo = refined_tex.fbo
@@ -21677,7 +21769,7 @@ module.exports = function(options) {
     // gl.bindFramebuffer(gl.FRAMEBUFFER, null)
   }
 }
-},{"../gl.js":194}],193:[function(require,module,exports){
+},{"../gl.js":195}],194:[function(require,module,exports){
 'use strict'
 
 var DEG2RAD = 3.14159265 / 180
@@ -21685,7 +21777,7 @@ var DEG2RAD = 3.14159265 / 180
 var Camera = function(w, h) {
   var theta = -45 * DEG2RAD
   var phi = -45 * DEG2RAD
-  var zoom = 30
+  var zoom = 60
   var fovy = 45 * DEG2RAD
   var width = w
   var height = h
@@ -21808,7 +21900,7 @@ var Camera = function(w, h) {
 }
 
 module.exports = Camera
-},{}],194:[function(require,module,exports){
+},{}],195:[function(require,module,exports){
 'use strict'
 
 var GL
@@ -21820,9 +21912,52 @@ module.exports =  {
 
   get: function() {
     return GL
+  },
+
+  getShader: function(source, type) {
+    var shader = GL.createShader(type)
+
+    GL.shaderSource(shader, source);
+    GL.compileShader(shader);
+
+    if (!GL.getShaderParameter(shader, GL.COMPILE_STATUS)) {
+      alert(GL.getShaderInfoLog(shader));
+      return null;
+    }
+
+    return shader;
+  },
+
+  makeTexture: function(width, height) {
+    var texture = GL.createTexture()
+    GL.bindTexture(GL.TEXTURE_2D, texture)
+    GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
+    GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
+    GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, width, height, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
+
+    var fbo = GL.createFramebuffer()
+    GL.bindFramebuffer(GL.FRAMEBUFFER, fbo)
+    GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0)
+
+    var rbo = GL.createRenderbuffer()
+    GL.bindRenderbuffer(GL.RENDERBUFFER, rbo)
+    GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, width, height)
+
+    GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0)
+    GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, rbo)
+
+    GL.bindTexture(GL.TEXTURE_2D, null)
+    GL.bindRenderbuffer(GL.RENDERBUFFER, null)
+    GL.bindFramebuffer(GL.FRAMEBUFFER, null)
+
+    return {
+      tex: texture,
+      fbo: fbo,
+      rbo: rbo
+    }
   }
 }
-},{}],195:[function(require,module,exports){
+},{}],196:[function(require,module,exports){
 (function (process){
 var BITS = 52;
 var SCALE = 2 << 51;
@@ -43096,7 +43231,7 @@ function test(){
 }
 if(require.main === module) return test();
 }).call(this,require('_process'))
-},{"_process":3}],196:[function(require,module,exports){
+},{"_process":3}],197:[function(require,module,exports){
 'use strict';
 
 var domready = require("domready");
@@ -43150,6 +43285,10 @@ domready(function () {
   var running = false
 
   var options = {}
+  var visSettings = {}
+  var simSettings = {
+    rightPreference: true
+  }
 
   // var applyOptions = function(options) {
   //   if (biocrowds) {
@@ -43164,6 +43303,8 @@ domready(function () {
     scene.create()
     biocrowds = new BioCrowds(gl, scene.options())
     options = biocrowds.getOptions()
+    options.vis = visSettings
+    options.sim = simSettings
     biocrowds.scene = scene
     biocrowds.init()
     biocrowds.initAgents(scene.agents)    
@@ -43181,6 +43322,22 @@ domready(function () {
   //   options.rightPreference = document.getElementById('rightPreference').checked
   //   options.drawMarkers = document.getElementById('drawMarkers').checked
   // }
+
+  document.getElementById('rightPreference').onclick = function() {
+    simSettings.rightPreference = document.getElementById('rightPreference').checked
+    biocrowds.applyOptions()
+  }
+
+  var setupVisBtns = function() {
+    var btns = document.getElementsByClassName('plane-visualize-btn')
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener('click', function() {
+        visSettings.groundPlane = this.getAttribute('attr-val')
+        biocrowds.applyOptions()
+      })
+    }
+  }
+  setupVisBtns()
 
   document.getElementById('circle-scene-btn').onclick = function() {
     loadScene(CircleScene)
@@ -43270,13 +43427,14 @@ domready(function () {
   loadScene(CircleScene)
   runSimulation()
 })
-},{"./biocrowds":188,"./mygl.js":197,"./objects/cube.js":199,"./objects/plane.js":201,"./scenes/circle.js":203,"./scenes/oncoming.js":204,"./shaderprogram.js":205,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],197:[function(require,module,exports){
+},{"./biocrowds":188,"./mygl.js":198,"./objects/cube.js":200,"./objects/plane.js":202,"./scenes/circle.js":205,"./scenes/oncoming.js":206,"./shaderprogram.js":207,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],198:[function(require,module,exports){
 'use strict';
 
 var Cube = require('./objects/cube.js')
 var Plane = require('./objects/plane.js')
 var Cylinder = require('./objects/cylinder.js')
 var Cone = require('./objects/cone.js')
+var SkewedCone = require('./objects/skewed-cone.js')
 var Triangle = require('./objects/triangle.js')
 var ShaderProgram = require('./shaderprogram.js')
 var Camera = require('./camera.js')
@@ -43318,6 +43476,7 @@ module.exports = function() {
     Cylinder.create(gl)
     Triangle.create(gl)
     Cone.create(gl)
+    SkewedCone.create(gl)
 
     gl.lineWidth(1.0)
     
@@ -43405,15 +43564,16 @@ module.exports = function() {
     this.draw()
   }
 
+  this.viewProj = mat4.create()
+
   this.draw = function () {
     gl.clearColor(0.2, 0.2, 0.2, 1.0)
     gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-    var viewProj = mat4.create();
-    cam.viewProj(viewProj);
-    this.Lambert.setViewProj(viewProj);
-    this.MarkerShader.setViewProj(viewProj);
+    cam.viewProj(this.viewProj);
+    this.Lambert.setViewProj(this.viewProj);
+    this.MarkerShader.setViewProj(this.viewProj);
 
     /*var model = mat4.create();
     var plane = {
@@ -43435,10 +43595,10 @@ module.exports = function() {
     }
   }
 }
-},{"./camera.js":193,"./gl.js":194,"./objects/cone.js":198,"./objects/cube.js":199,"./objects/cylinder.js":200,"./objects/plane.js":201,"./objects/triangle.js":202,"./shaderprogram.js":205,"./shaders/lambert-fs.js":206,"./shaders/lambert-vs.js":207,"./shaders/marker-fs.js":208,"./shaders/marker-vs.js":209,"./shaders/pixel-vs.js":210,"./shaders/test-fs.js":211,"./shaders/test-vs.js":212,"./shaders/velocity-fs.js":213,"./shaders/velocity-vs.js":214,"./shaders/voronoi-fs.js":215,"./shaders/voronoi-vs.js":216}],198:[function(require,module,exports){
+},{"./camera.js":194,"./gl.js":195,"./objects/cone.js":199,"./objects/cube.js":200,"./objects/cylinder.js":201,"./objects/plane.js":202,"./objects/skewed-cone.js":203,"./objects/triangle.js":204,"./shaderprogram.js":207,"./shaders/lambert-fs.js":208,"./shaders/lambert-vs.js":209,"./shaders/marker-fs.js":210,"./shaders/marker-vs.js":211,"./shaders/pixel-vs.js":212,"./shaders/test-fs.js":213,"./shaders/test-vs.js":214,"./shaders/velocity-fs.js":215,"./shaders/velocity-vs.js":216,"./shaders/voronoi-fs.js":217,"./shaders/voronoi-vs.js":218}],199:[function(require,module,exports){
 'use strict'
 
-var CYL_COUNT = 150
+var CYL_COUNT = 15
 var PI = 3.14159265
 var R = 100
 var H = 5
@@ -43465,8 +43625,7 @@ for (var i = 0; i < CYL_COUNT; i++) {
   var theta = 2*PI*i / CYL_COUNT
   var x = Math.cos(theta)
   var z = Math.sin(theta)
-  var offset = Math.cos(theta/2) * amnt + (1+amnt)
-  vertices.push.apply(vertices, [R*x, -H*offset, R*z, 1])
+  vertices.push.apply(vertices, [R*x, -H, R*z, 1])
   normals.push.apply(normals, [x, 0, z, 0])
   colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
 }
@@ -43476,8 +43635,7 @@ for (var i = 0; i < CYL_COUNT; i++) {
   var theta = 2*PI*i / CYL_COUNT
   var x = Math.cos(theta)
   var z = Math.sin(theta)
-  var offset = Math.cos(theta/2) * amnt + (1+amnt)
-  vertices.push.apply(vertices, [R*x, -H*offset, R*z, 1])
+  vertices.push.apply(vertices, [R*x, -H, R*z, 1])
   normals.push.apply(normals, [0, -1, 0, 0])
   colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
 }
@@ -43554,7 +43712,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],199:[function(require,module,exports){
+},{}],200:[function(require,module,exports){
 'use strict'
 
 var cubeVertexPositionBuffer
@@ -43693,7 +43851,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],200:[function(require,module,exports){
+},{}],201:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 20
@@ -43818,13 +43976,14 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],201:[function(require,module,exports){
+},{}],202:[function(require,module,exports){
 'use strict'
 
 var vertexPositionBuffer
 var vertexColorBuffer
 var vertexNormalBuffer
 var vertexIndexBuffer
+var vertexUVBuffer
 
 var vertices = [
   -0.5,  0.0, -0.5, 1.0,
@@ -43845,6 +44004,13 @@ var colors = [
   0.8, 0.8, 0.8, 1.0,
   0.8, 0.8, 0.8, 1.0,
   0.8, 0.8, 0.8, 1.0
+]
+
+var uvs = [
+  0,1,
+  0,0,
+  1,0,
+  1,1
 ]
 
 var indices = [
@@ -43884,15 +44050,141 @@ module.exports = {
     vertexIndexBuffer.itemSize = 1
     vertexIndexBuffer.numItems = 6
 
+    vertexUVBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexUVBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(uvs), gl.STATIC_DRAW)
+    vertexUVBuffer.itemSize = 2
+    vertexUVBuffer.numItems = 4
+
     Geo.positions = vertexPositionBuffer
     Geo.normals = vertexNormalBuffer
     Geo.colors = vertexColorBuffer
     Geo.indices = vertexIndexBuffer
+    Geo.uvs = vertexUVBuffer
     Geo.count = 6
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],202:[function(require,module,exports){
+},{}],203:[function(require,module,exports){
+'use strict'
+
+var CYL_COUNT = 15
+var PI = 3.14159265
+var R = 100
+var H = 5
+
+var vertices = []
+var normals = []
+var indices = []
+var colors = []
+var amnt = 0.125
+// top barrel
+for (var i = 0; i < CYL_COUNT; i++) {
+  var theta = 2*PI*i / CYL_COUNT
+  var x = Math.cos(theta)
+  var z = Math.sin(theta)
+  // vertices.push.apply(vertices, [R*x, H, R*z, 1])
+  // normals.push.apply(normals, [x, 0, z, 0])
+  vertices.push.apply(vertices, [0, 0, 0, 1])
+  normals.push.apply(normals, [x, 0, z, 0])
+  colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
+}
+
+// bottom barrel
+for (var i = 0; i < CYL_COUNT; i++) {
+  var theta = 2*PI*i / CYL_COUNT
+  var x = Math.cos(theta)
+  var z = Math.sin(theta)
+  var offset = Math.cos(theta/2) * amnt + (1+amnt)
+  vertices.push.apply(vertices, [R*x, -H*offset, R*z, 1])
+  normals.push.apply(normals, [x, 0, z, 0])
+  colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
+}
+
+// bottom face
+for (var i = 0; i < CYL_COUNT; i++) {
+  var theta = 2*PI*i / CYL_COUNT
+  var x = Math.cos(theta)
+  var z = Math.sin(theta)
+  var offset = Math.cos(theta/2) * amnt + (1+amnt)
+  vertices.push.apply(vertices, [R*x, -H*offset, R*z, 1])
+  normals.push.apply(normals, [0, -1, 0, 0])
+  colors.push.apply(colors, [0.8, 0.8, 0.8, 1])
+}
+
+// barrel indices
+for (var i = 0; i < CYL_COUNT; i++) {
+  var idx1 = i
+  var idx2 = i+1
+  var idx3 = i+CYL_COUNT
+  var idx4 = i+CYL_COUNT+1
+
+  if (idx2 >= CYL_COUNT) {
+    idx2 -= CYL_COUNT
+  }
+
+  if (idx4 >= 2*CYL_COUNT) {
+    idx4 -= CYL_COUNT
+  }
+
+  indices.push.apply(indices, [idx1, idx2, idx3])
+  indices.push.apply(indices, [idx2, idx3, idx4])
+}
+
+for (var i = 2*CYL_COUNT + 1; i < 3*CYL_COUNT - 1; i++) {
+  indices.push.apply(indices, [2*CYL_COUNT, i, i+1])
+}
+
+// for (var i = 3*CYL_COUNT + 1; i < 4*CYL_COUNT - 1; i++) {
+//   indices.push.apply(indices, [3*CYL_COUNT, i, i+1])
+// }
+
+var Geo = {}
+var vertexPositionBuffer
+var vertexColorBuffer
+var vertexNormalBuffer
+var vertexIndexBuffer
+
+module.exports = {
+
+  get: function() {
+    return Geo
+  },
+
+  create: function(gl) {
+    vertexPositionBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW)
+    vertexPositionBuffer.itemSize = 4
+    vertexPositionBuffer.numItems = 3*CYL_COUNT
+
+    vertexNormalBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexNormalBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW)
+    vertexNormalBuffer.itemSize = 4
+    vertexNormalBuffer.numItems = 3*CYL_COUNT
+
+    vertexColorBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
+    vertexColorBuffer.itemSize = 4
+    vertexColorBuffer.numItems = 3*CYL_COUNT
+
+    vertexIndexBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vertexIndexBuffer)
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW)
+    vertexIndexBuffer.itemSize = 1
+    vertexIndexBuffer.numItems = CYL_COUNT*2*3 + (CYL_COUNT-2)*3
+
+    Geo.positions = vertexPositionBuffer
+    Geo.normals = vertexNormalBuffer
+    Geo.colors = vertexColorBuffer
+    Geo.indices = vertexIndexBuffer
+    Geo.count = CYL_COUNT*2*3 + (CYL_COUNT-2)*3
+    Geo.drawMode = gl.TRIANGLES
+  }
+}
+},{}],204:[function(require,module,exports){
 'use strict'
 
 var PI = 3.14159265
@@ -43964,7 +44256,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],203:[function(require,module,exports){
+},{}],205:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -44016,7 +44308,7 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],204:[function(require,module,exports){
+},{"onecolor":4}],206:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -44082,7 +44374,7 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],205:[function(require,module,exports){
+},{"onecolor":4}],207:[function(require,module,exports){
 'use strict';
 
 var ANGLE_initialized = false;
@@ -44262,7 +44554,7 @@ module.exports = function (gl, shaders) {
 
   this.init(shaders);
 }
-},{}],206:[function(require,module,exports){
+},{}],208:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44288,7 +44580,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],207:[function(require,module,exports){
+},{}],209:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44318,7 +44610,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],208:[function(require,module,exports){
+},{}],210:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44335,7 +44627,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],209:[function(require,module,exports){
+},{}],211:[function(require,module,exports){
 'use strict'
 
 var src ='\
@@ -44356,7 +44648,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],210:[function(require,module,exports){
+},{}],212:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44375,7 +44667,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],211:[function(require,module,exports){
+},{}],213:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44394,7 +44686,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],212:[function(require,module,exports){
+},{}],214:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44416,7 +44708,7 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],213:[function(require,module,exports){
+},{}],215:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44571,7 +44863,7 @@ module.exports = {
   }\
 
   */
-},{}],214:[function(require,module,exports){
+},{}],216:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44591,9 +44883,9 @@ module.exports = {
   src: src,
   type: type
 }
-},{}],215:[function(require,module,exports){
-arguments[4][208][0].apply(exports,arguments)
-},{"dup":208}],216:[function(require,module,exports){
+},{}],217:[function(require,module,exports){
+arguments[4][210][0].apply(exports,arguments)
+},{"dup":210}],218:[function(require,module,exports){
 'use strict'
 
 var src = '\
@@ -44643,4 +44935,4 @@ module.exports = {
   src: src,
   type: type
 }
-},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216]);
+},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218]);

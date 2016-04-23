@@ -6,23 +6,9 @@ module.exports = function(options) {
   var gl = GL.get()
   var ext = gl.getExtension("ANGLE_instanced_arrays")
 
-  var getShader = function(source, type) {
-    var shader = gl.createShader(type)
-
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      alert(gl.getShaderInfoLog(shader));
-      return null;
-    }
-
-    return shader;
-  }
-
   var shaderProgram = gl.createProgram()
-  gl.attachShader(shaderProgram, getShader(velocity_vertex_shader_src, gl.VERTEX_SHADER))
-  gl.attachShader(shaderProgram, getShader(velocity_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(velocity_vertex_shader_src, gl.VERTEX_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(velocity_fragment_shader_src, gl.FRAGMENT_SHADER))
   gl.linkProgram(shaderProgram)
 
   if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
@@ -73,37 +59,10 @@ module.exports = function(options) {
   gl.getExtension('OES_texture_float')
   gl.getExtension('OES_float_linear')
 
-  var makeTexture = function() {
-    var weight_texture = gl.createTexture()
-    gl.bindTexture(gl.TEXTURE_2D, weight_texture)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, options.gridWidth, options.gridDepth, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+  var weight_tex = GL.makeTexture(options.gridWidth, options.gridDepth)
+  var velocity_tex = GL.makeTexture(options.gridWidth, options.gridDepth)
 
-    var weight_fbo = gl.createFramebuffer()
-    gl.bindFramebuffer(gl.FRAMEBUFFER, weight_fbo)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, weight_texture, 0)
-
-    var weight_rbo = gl.createRenderbuffer()
-    gl.bindRenderbuffer(gl.RENDERBUFFER, weight_rbo)
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
-
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, weight_texture, 0)
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, weight_rbo)
-
-    gl.bindTexture(gl.TEXTURE_2D, null)
-    gl.bindRenderbuffer(gl.RENDERBUFFER, null)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-
-    return {
-      tex: weight_texture,
-      fbo: weight_fbo,
-      rbo: weight_rbo
-    }
-  }
-
-  var weight_tex = makeTexture()
-  var velocity_tex = makeTexture()
+  this.tex = weight_tex.tex
 
   this.drawWeights = function() {
     gl.useProgram(shaderProgram)

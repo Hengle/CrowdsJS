@@ -94,8 +94,14 @@ void main(void) {
   int id = toID(col);
   vec4 data = texture2D(u_image1, vec2(float(id)/(numAgents-0.5), 0.0));
   vec3 pos = vec3(data.xy, 0);
+  vec3 gol = vec3(data.zw, 0);
+  vec3 golVec = gol - pos;
 
   if (drawMode == 3) {
+    if (length(golVec.xy * windowSize) <= float(R)) {
+      gl_FragColor = vec4(golVec * 0.25 * vec3(windowSize[0], windowSize[1], 1) / float(R) + vec3(0.5,0.5,0), 1);
+      return;
+    }
 
     float totalWeight = 0.0;
     for (int i = -R; i < R; i++) {
@@ -138,9 +144,6 @@ void main(void) {
     gl_FragColor = vec4(cumul*0.5 + vec3(0.5,0.5,0), 1);
     return;
   }
-
-  vec3 gol = vec3(data.zw, 0);
-  vec3 golVec = gol - pos;
   
   vec3 marker = 2.0*vec3(fs_uv, 0) - vec3(1,1,0);
   vec3 markerVec = vec3(fs_uv, 0) - pos;

@@ -13,6 +13,7 @@ var VoronoiGenerator = require('./voronoi-generate')
 var Projector = require('./projector')
 var VelocityCalculator = require('./velocity-calculate')
 var VoronoiRefine = require('./voronoi-refine')
+var TexturedPlane = require('./textured-plane')
 
 var defaultOptions = {
   originX: -16,
@@ -143,9 +144,8 @@ var BioCrowds = function(gl, options) {
   var voronoiGenerator
   var velocityCalculator
   var voronoiRefine
-  var voronoi_texture
-  var voronoi_fbo
-  var velocity_fbo
+  var groundPlane
+  var groundPlaneObj
 
   var bioCrowds = {
     init: function() {
@@ -154,71 +154,40 @@ var BioCrowds = function(gl, options) {
       var GL = gl.getGL()
       projector = new Projector(options)
       blockGenerator = new BlockGenerator(GL, projector, options)
-      voronoiGenerator = new VoronoiGenerator(GL, projector, options)
+      // voronoiGenerator = new VoronoiGenerator(GL, projector, options)
+      voronoiGenerator = new VoronoiGenerator(options)
       velocityCalculator = new VelocityCalculator(options)
       voronoiRefine = new VoronoiRefine(options)
 
       var planeTrans = mat4.create()
       mat4.scale(planeTrans, planeTrans, vec3.fromValues(options.sizeX, 1, options.sizeZ))
       var planeCol = vec4.fromValues(0.8,0.8,0.8,1)
+
+      groundPlaneObj = new TexturedPlane(options)
       var groundPlane = {
         draw: function() {
-          gl.Lambert.setColor(planeCol),
-          gl.Lambert.setModelMat(planeTrans),
-          gl.Lambert.draw(Plane.get())   
+          groundPlaneObj.setViewProj(gl.viewProj)
+          groundPlaneObj.setModelMat(planeTrans)
+          groundPlaneObj.draw()
         }
       }
-      drawables.push(groundPlane)
       gl.drawables.push(groundPlane)
+      drawables.push(groundPlane)
 
-      voronoi_texture = GL.createTexture()
-      GL.bindTexture(GL.TEXTURE_2D, voronoi_texture)
-      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
-      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
+      this.applyOptions()
+    },
 
-      GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, options.gridWidth, options.gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
-
-      voronoi_fbo = GL.createFramebuffer()
-      GL.bindFramebuffer(GL.FRAMEBUFFER, voronoi_fbo)
-
-      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, voronoi_texture, 0)
-
-      var renderbuffer = GL.createRenderbuffer();
-      GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
-      GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
-
-      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, voronoi_texture, 0)
-      GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
-
-      // ---------------------------------------------------------
-
-      var velocity_texture = GL.createTexture()
-
-      GL.bindTexture(GL.TEXTURE_2D, velocity_texture)
-      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
-      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
-
-      GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, options.gridWidth, options.gridDepth, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)
-
-      velocity_fbo = GL.createFramebuffer()
-      GL.bindFramebuffer(GL.FRAMEBUFFER, velocity_fbo)
-
-      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, velocity_texture, 0)
-
-      renderbuffer = GL.createRenderbuffer();
-      GL.bindRenderbuffer(GL.RENDERBUFFER, renderbuffer);
-      GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, options.gridWidth, options.gridDepth)
-
-      GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, velocity_texture, 0)
-      GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer)
-
-      // ------------------------------------------------------------------------------------
-
-      GL.bindTexture(GL.TEXTURE_2D, null)
-      GL.bindRenderbuffer(GL.RENDERBUFFER, null)
-      GL.bindFramebuffer(GL.FRAMEBUFFER, null)
-
-      // bioCrowds.setupMarkerBuffers()
+    applyOptions: function() {
+      if (!options.vis.groundPlane) {
+        groundPlaneObj.setTexture(null)  
+      } else if (options.vis.groundPlane == 'voronoi') {
+        groundPlaneObj.setTexture(voronoiGenerator.tex)
+      } else if (options.vis.groundPlane == 'voronoi-refine') {
+        groundPlaneObj.setTexture(voronoiRefine.tex)
+      } else if (options.vis.groundPlane == 'weights') {
+        groundPlaneObj.setTexture(velocityCalculator.tex)
+      }
+      voronoiGenerator.initAgentBuffers(agents)
     },
 
     deinit: function() {
@@ -289,7 +258,7 @@ var BioCrowds = function(gl, options) {
     step: function(t) {
       var GL = gl.getGL()
 
-      gl.VoronoiShader.setViewProj(projector.viewproj)
+      /*gl.VoronoiShader.setViewProj(projector.viewproj)
 
       GL.bindFramebuffer(GL.FRAMEBUFFER, voronoi_fbo)
       GL.viewport(0, 0, options.gridWidth, options.gridDepth)
@@ -299,14 +268,26 @@ var BioCrowds = function(gl, options) {
       GL.bindFramebuffer(GL.FRAMEBUFFER, null)
       GL.viewport(0, 0, 150, 150)
       GL.clear( GL.DEPTH_BUFFER_BIT )
-      gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)
+      gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)*/
+      voronoiGenerator.setViewProj(projector.viewproj)
+
+      GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiGenerator.fbo)
+      GL.viewport(0, 0, options.gridWidth, options.gridDepth)
+      GL.clear( GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
+      voronoiGenerator.draw()
+
+      GL.bindFramebuffer(GL.FRAMEBUFFER, null)
+      GL.viewport(0, 0, 150, 150)
+      GL.clear( GL.DEPTH_BUFFER_BIT )
+      voronoiGenerator.draw()
 
       GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiRefine.fbo)
       GL.viewport(0, 0, options.gridWidth, options.gridDepth)
-      voronoiRefine.draw(voronoi_texture)
+      voronoiRefine.draw(voronoiGenerator.tex)
+
       GL.bindFramebuffer(GL.FRAMEBUFFER, null)
       GL.viewport(150, 0, 150, 150)
-      voronoiRefine.draw(voronoi_texture)
+      voronoiRefine.draw(voronoiGenerator.tex)
 
       velocityCalculator.setupDraw(agents, projector.viewproj, voronoiRefine.tex)
       GL.viewport(300, 0, 150, 150)

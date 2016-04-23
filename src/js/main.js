@@ -51,6 +51,10 @@ domready(function () {
   var running = false
 
   var options = {}
+  var visSettings = {}
+  var simSettings = {
+    rightPreference: true
+  }
 
   // var applyOptions = function(options) {
   //   if (biocrowds) {
@@ -65,6 +69,8 @@ domready(function () {
     scene.create()
     biocrowds = new BioCrowds(gl, scene.options())
     options = biocrowds.getOptions()
+    options.vis = visSettings
+    options.sim = simSettings
     biocrowds.scene = scene
     biocrowds.init()
     biocrowds.initAgents(scene.agents)    
@@ -82,6 +88,22 @@ domready(function () {
   //   options.rightPreference = document.getElementById('rightPreference').checked
   //   options.drawMarkers = document.getElementById('drawMarkers').checked
   // }
+
+  document.getElementById('rightPreference').onclick = function() {
+    simSettings.rightPreference = document.getElementById('rightPreference').checked
+    biocrowds.applyOptions()
+  }
+
+  var setupVisBtns = function() {
+    var btns = document.getElementsByClassName('plane-visualize-btn')
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener('click', function() {
+        visSettings.groundPlane = this.getAttribute('attr-val')
+        biocrowds.applyOptions()
+      })
+    }
+  }
+  setupVisBtns()
 
   document.getElementById('circle-scene-btn').onclick = function() {
     loadScene(CircleScene)
