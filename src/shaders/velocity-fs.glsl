@@ -2,7 +2,9 @@
 
 precision highp float;
 uniform sampler2D u_image0; 
-uniform sampler2D u_image1; 
+uniform sampler2D u_image1;
+uniform sampler2D u_comfortMap; 
+uniform bool u_useComfortMap;
 uniform sampler2D u_weights; 
 uniform float u_R;
 uniform float numAgents;
@@ -109,6 +111,10 @@ void main(void) {
         vec2 uv = fs_uv + vec2(i, j) / windowSize;
         col = texture2D(u_image0, uv);
         vec4 wt = texture2D(u_weights, uv);
+        wt *= (
+          (1.0 - float(u_useComfortMap)) + 
+          float(u_useComfortMap)*texture2D(u_comfortMap, uv).x
+        );
 
         if (id == toID(col) && i != 0 && j != 0) {
           // vec3 markerVec = vec3(uv,0) - pos;
@@ -130,6 +136,10 @@ void main(void) {
         vec2 uv = fs_uv + vec2(i, j) / windowSize;
         col = texture2D(u_image0, uv);
         vec4 wt = texture2D(u_weights, uv);
+        wt *= (
+          (1.0 - float(u_useComfortMap)) + 
+          float(u_useComfortMap)*texture2D(u_comfortMap, uv).x
+        );
 
         if (id == toID(col) && i != 0 && j != 0) {
           vec3 markerVec = (vec3(uv,0) - pos) * vec3(windowSize[0], windowSize[1], 1) / float(R);  
@@ -150,6 +160,10 @@ void main(void) {
   golVec = gol - pos;
   float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));
   // weight = weight * snoise(50.0*fs_uv);
+  weight *= (
+    (1.0 - float(u_useComfortMap)) + 
+    float(u_useComfortMap)*texture2D(u_comfortMap, fs_uv).x
+  );
   bool mask = length(markerVec) < float(R) / windowSize.x;
   weight = float(mask) * weight;
 

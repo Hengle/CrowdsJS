@@ -15,10 +15,13 @@ module.exports = function(options) {
     alert("Could not link program!");
   }
 
+  gl.useProgram(shaderProgram)
   shaderProgram.attrPos = gl.getAttribLocation(shaderProgram, "vs_pos")
   shaderProgram.attrUv = gl.getAttribLocation(shaderProgram, "vs_uv")
   shaderProgram.unifImage0 = gl.getUniformLocation(shaderProgram, "u_image0")
   shaderProgram.unifImage1 = gl.getUniformLocation(shaderProgram, "u_image1")
+  shaderProgram.unifComfortMap = gl.getUniformLocation(shaderProgram, "u_comfortMap")
+  shaderProgram.unifComfortMapEnabled = gl.getUniformLocation(shaderProgram, "u_useComfortMap")
   shaderProgram.unifWeightsTex = gl.getUniformLocation(shaderProgram, "u_weights")
   shaderProgram.R = gl.getUniformLocation(shaderProgram, "u_R")
   shaderProgram.windowSize = gl.getUniformLocation(shaderProgram, "windowSize")
@@ -90,6 +93,7 @@ module.exports = function(options) {
   var agent_data_tex;
   var proj;
   var velocityBufferDirty;
+  var comfortMap;
   var velocityBuffer = new Uint8Array(options.gridWidth*options.gridDepth*4);
   this.draw = function() {
     gl.useProgram(shaderProgram)
@@ -160,7 +164,7 @@ module.exports = function(options) {
     return projected
   }
 
-  this.init = function(agents, projector) {
+  this.init = function(agents, projector, cMap) {
     proj = projector;
     agent_data = new Float32Array(agents.length*4)
     agent_pts = new Float32Array(agents.length*4)
@@ -190,6 +194,17 @@ module.exports = function(options) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, agents.length, 1, 0, gl.RGBA, gl.FLOAT, agent_data)
     gl.bindTexture(gl.TEXTURE_2D, null)
+
+    gl.useProgram(shaderProgram)
+    if (cMap) {
+      gl.uniform1f(shaderProgram.unifComfortMapEnabled, true)
+      gl.uniform1i(shaderProgram.unifComfortMap, 2)
+      gl.activeTexture(gl.TEXTURE2)
+      gl.bindTexture(gl.TEXTURE_2D, comfortMap)
+      comfortMap = cMap
+    } else {
+      gl.uniform1f(shaderProgram.unifComfortMapEnabled, false)
+    }
   }
 
   this.setupDraw = function(agents, proj, voronoi) {
@@ -235,12 +250,18 @@ module.exports = function(options) {
     gl.uniform2f(shaderProgram.windowSize, options.gridWidth, options.gridDepth)
     gl.uniform1i(shaderProgram.unifImage0, 0)
     gl.uniform1i(shaderProgram.unifImage1, 1)
+    gl.uniform1i(shaderProgram.unifComfortMap, 2)
 
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, voronoi)
 
     gl.activeTexture(gl.TEXTURE1)
     gl.bindTexture(gl.TEXTURE_2D, agent_data_tex)
+
+    if (comfortMap) {
+      gl.activeTexture(gl.TEXTURE2)
+      gl.bindTexture(gl.TEXTURE_2D, comfortMap)
+    }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, v_pos)
     gl.enableVertexAttribArray(shaderProgram.attrPos);

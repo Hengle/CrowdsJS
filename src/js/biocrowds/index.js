@@ -13,6 +13,7 @@ var Projector = require('./projector')
 var VelocityCalculator = require('./velocity-calculate')
 var VoronoiRefine = require('./voronoi-refine')
 var TexturedPlane = require('./textured-plane')
+var NoiseGenerator = require('./noise-generator')
 
 var defaultOptions = {
   originX: -16,
@@ -46,14 +47,17 @@ var BioCrowds = function(gl, options) {
   var voronoiRefine
   var groundPlane
   var groundPlaneObj
+  var noiseTex
 
   var bioCrowds = {
     init: function() {
       var GL = gl.getGL()
+      var noiseGenerator = new NoiseGenerator()
       projector = new Projector(options)
       voronoiGenerator = new VoronoiGenerator(options)
       velocityCalculator = new VelocityCalculator(options)
       voronoiRefine = new VoronoiRefine(options)
+      noiseTex = noiseGenerator.generate(options.gridWidth, options.gridDepth, 3)
 
       var planeTrans = mat4.create()
       mat4.scale(planeTrans, planeTrans, vec3.fromValues(options.sizeX, 1, options.sizeZ))
@@ -82,6 +86,8 @@ var BioCrowds = function(gl, options) {
         groundPlaneObj.setTexture(voronoiRefine.tex)
       } else if (options.vis.groundPlane == 'weights') {
         groundPlaneObj.setTexture(velocityCalculator.tex)
+      } else if (options.vis.groundPlane == 'noise') {
+        groundPlaneObj.setTexture(noiseTex)
       }
       voronoiGenerator.initAgentBuffers(agents)
     },
@@ -147,7 +153,8 @@ var BioCrowds = function(gl, options) {
         gl.drawables.push(agent)
         drawables.push(agent)
       }
-      velocityCalculator.init(agents, projector)
+      // velocityCalculator.init(agents, projector)
+      velocityCalculator.init(agents, projector, noiseTex)
       voronoiGenerator.initAgentBuffers(agents)
     },
 
