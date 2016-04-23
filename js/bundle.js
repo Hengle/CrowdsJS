@@ -20508,234 +20508,6 @@ module.exports = Panel;
 },{"classnames":24,"react":181,"react-dom":25}],186:[function(require,module,exports){
 'use strict'
 
-var GridChunker = require('./grid-chunk')
-
-var evaluateMarkerWeight = function(x, y, ax, ay, gx, gy) {
-  var v1 = vec2.fromValues(x-ax, y-ay)
-  var v2 = vec2.fromValues(gx-ax, gy-ay)
-  vec2.normalize(v1,v1)
-  vec2.normalize(v2,v2)
-  return 1 + vec2.dot(v1,v2)
-}
-
-module.exports = function(GL, projector, options) {
-
-  var edgeid = GL.createBuffer()
-  GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, edgeid)
-  GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, 0, GL.DYNAMIC_DRAW)
-
-  var edgepos = GL.createBuffer()
-  GL.bindBuffer(GL.ARRAY_BUFFER, edgepos)
-  GL.bufferData(GL.ARRAY_BUFFER, 0, GL.DYNAMIC_DRAW)
-
-  var edgecol = GL.createBuffer()
-  GL.bindBuffer(GL.ARRAY_BUFFER, edgecol)
-  GL.bufferData(GL.ARRAY_BUFFER, 0, GL.DYNAMIC_DRAW)
-
-  var bufferData
-
-  var chunker = new GridChunker()
-
-  this.chunk = function(agents, buffer, options) {
-    for (var i = 0; i < agents.length; i++) {
-      agents[i].blocks = []
-    }
-
-    var edge_pos = []
-    var edge_cols = []
-    var edge_ids = []
-    var edgeCount = 0
-
-    var screenPos = vec3.create()
-
-    chunker.init(buffer, options)
-    chunker.chunk(0,0,options.gridWidth,options.gridDepth, function(x,y,X,Y,col) {
-      var id = projector.col2ID(col)
-
-      if (id < agents.length) {
-        vec3.transformMat4(screenPos, agents[id].pos, projector.viewproj)
-        var ax = 0.5*(screenPos[0]+1)*options.gridWidth
-        var ay = 0.5*(screenPos[1]+1)*options.gridDepth
-        vec3.transformMat4(screenPos, agents[id].goal, projector.viewproj)
-        var gx = 0.5*(screenPos[0]+1)*options.gridWidth
-        var gy = 0.5*(screenPos[1]+1)*options.gridDepth
-
-        chunker.filterRadius(x,X,y,Y,25,ax,ay, id, function(x,X,y,Y, id) {
-          var w1 = evaluateMarkerWeight(x, y, ax, ay, gx, gy)
-          var w2 = evaluateMarkerWeight(X, y, ax, ay, gx, gy)
-          var w3 = evaluateMarkerWeight(x, Y, ax, ay, gx, gy)
-          var w4 = evaluateMarkerWeight(X, Y, ax, ay, gx, gy)
-          var W = w1+w2+w3+w4
-
-          var pos = vec2.fromValues(
-            (x-ax)*w1/W + (X-ax)*w2/W + (x-ax)*w3/W + (X-ax)*w4/W, 
-            (y-ay)*w1/W + (y-ay)*w2/W + (Y-ay)*w3/W + (Y-ay)*w4/W)
-
-          agents[id].blocks.push({
-            pos: pos, 
-            weight: W*(X-x)*(Y-y)
-          })
-
-          var l = edgeCount
-          edge_ids.push.apply(edge_ids, [l,l+1, l+1,l+2, l+2,l+3, l+3,l])
-          var nx = x / options.gridWidth * 2 - 1
-          var nX = X / options.gridWidth * 2 - 1
-          var ny = y / options.gridDepth * 2 - 1
-          var nY = Y / options.gridDepth * 2 - 1
-          edge_pos.push.apply(edge_pos,[
-            nx,ny,0.5,1,
-            nX,ny,0.5,1,
-            nX,nY,0.5,1,
-            nx,nY,0.5,1
-          ])
-          edgeCount += 4
-          var r = agents[id].col[0]
-          var g = agents[id].col[1]
-          var b = agents[id].col[2]
-
-          edge_cols.push.apply(edge_cols, [
-            r, g, b, 1,
-            r, g, b, 1,
-            r, g, b, 1,
-            r, g, b, 1
-          ])
-        })
-      }
-    })
-
-    GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, edgeid)
-    GL.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint16Array(edge_ids), GL.DYNAMIC_DRAW)
-
-    GL.bindBuffer(GL.ARRAY_BUFFER, edgepos)
-    GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(edge_pos), GL.DYNAMIC_DRAW)
-
-    GL.bindBuffer(GL.ARRAY_BUFFER, edgecol)
-    GL.bufferData(GL.ARRAY_BUFFER, new Float32Array(edge_cols), GL.DYNAMIC_DRAW)
-
-    bufferData = {
-      positions: edgepos,
-      colors: edgecol,
-      indices: edgeid,
-      drawMode: GL.LINES,
-      count: edge_ids.length
-    }
-  }
-
-  this.buffer = function() {
-    return bufferData
-  }
-}
-},{"./grid-chunk":187}],187:[function(require,module,exports){
-'use strict'
-
-module.exports = function(thebuffer, theoptions) {
-  var buffer
-  var options
-  
-  this.init = function(thebuffer, theoptions) {
-    buffer = thebuffer
-    options = theoptions
-  }
-
-  this.init(thebuffer, theoptions)
-
-  var indexOf = function(x, y) {
-    return 4*(x + y * options.sizeX/options.gridSize)
-  }
-
-  var colEq = function(c1, c2) {
-    return c1[0] == c2[0] && c1[1] == c2[1] && c1[2] == c2[2]
-  }
-
-  var chunkGrid = function(x, y, X, Y, cb) {
-    if (X-x <= 1 && Y-y <= 1) return
-
-    var i1 = indexOf(x,y)
-    var i2 = indexOf(X-1,y)
-    var i3 = indexOf(x,Y-1)
-    var i4 = indexOf(X-1,Y-1)
-
-    var c1 = [buffer[i1], buffer[i1+1], buffer[i1+2]]
-    var c2 = [buffer[i2], buffer[i2+1], buffer[i2+2]]
-    var c3 = [buffer[i3], buffer[i3+1], buffer[i3+2]]
-    var c4 = [buffer[i4], buffer[i4+1], buffer[i4+2]]
-
-    var xm = Math.floor((x+X)/2)
-    var ym = Math.floor((y+Y)/2)
-
-    // console.log(c1,c2,c3,c4)
-    // console.log(x,X,y,Y)
-
-    if (colEq(c1,c2) && colEq(c3,c4) && colEq(c1,c3)) {
-      // all same
-      cb(x, y, X, Y, c1)
-    } else if (colEq(c1,c2) && colEq(c3,c4) && !colEq(c1,c3)) {
-      // only vertical split
-      chunkGrid(x, y, X, ym, cb)
-      chunkGrid(x, ym, X, Y, cb)
-    } else if (colEq(c1,c3) && colEq(c2,c4) && !colEq(c1,c2)) {
-      // only horizontal split
-      chunkGrid(x, y, xm, Y, cb)
-      chunkGrid(xm, y, X, Y, cb)
-    } else if (colEq(c1,c2) && (!colEq(c1,c3) || !colEq(c2,c4))) {
-      // vertical split, split top horizontally
-      chunkGrid(x, y, X, ym, cb)
-      chunkGrid(x, ym, xm, Y, cb)
-      chunkGrid(xm, ym, X, Y, cb)
-    } else if (colEq(c3,c4) && (!colEq(c1,c3) || !colEq(c2,c4))) {
-      // vertical split, split bottom horizontally
-      chunkGrid(x, y, xm, ym, cb)
-      chunkGrid(xm, y, X, ym, cb)
-      chunkGrid(x, ym, X, Y, cb)
-    } else if (colEq(c1,c3) && (!colEq(c1,c2) || !colEq(c3,c4))) {
-      // horizontal split, split right vertically
-      chunkGrid(x, y, xm, Y, cb)
-      chunkGrid(xm, y, X, ym, cb)
-      chunkGrid(xm, ym, X, Y, cb)
-    } else if (colEq(c2,c4) && (!colEq(c1,c2) || !colEq(c3,c4))) {
-      // horizontal split, split left vertically
-      chunkGrid(x, y, xm, ym, cb)
-      chunkGrid(x, ym, xm, Y, cb)
-      chunkGrid(xm, y, X, Y, cb)
-    } else {
-      // split all
-      chunkGrid(x, y, xm, ym, cb)
-      chunkGrid(x, ym, xm, Y, cb)
-      chunkGrid(xm, y, X, ym, cb)
-      chunkGrid(xm, ym, X, Y, cb)
-    }
-  }
-
-  this.chunk = function(x, y, w, h, cb) {
-    chunkGrid(x, y, w, h, cb)
-  }
-
-  this.filterRadius = function(x, X, y, Y, r, px, py, id, cb) {
-    if (X-x <= 1 && Y-y <= 1) return
-    var point = vec2.fromValues(px, py)
-    var ll = vec2.dist(vec2.fromValues(x, y), point) < r
-    var lr = vec2.dist(vec2.fromValues(X, y), point) < r
-    var ul = vec2.dist(vec2.fromValues(x, Y), point) < r
-    var ur = vec2.dist(vec2.fromValues(X, Y), point) < r
-
-    var xm = Math.floor((x+X)/2)
-    var ym = Math.floor((y+Y)/2)
-
-    if (x > px+r || X < px-r || y > py+r || Y < py-r) {
-      return
-    } else if (ll && lr && ul && ur) {
-      return cb(x,X,y,Y, id)
-    } else {
-      this.filterRadius(xm,X,ym,Y,r,px,py,id,cb)
-      this.filterRadius(x,xm,y,ym,r,px,py,id,cb)
-      this.filterRadius(xm,X,y,ym,r,px,py,id,cb)
-      this.filterRadius(x,xm,ym,Y,r,px,py,id,cb)
-    }
-  }
-}
-},{}],188:[function(require,module,exports){
-'use strict'
-
 var Sobol = require('../lib/sobol.js')
 var sobol = new Sobol(2)
 var Cube = require('../objects/cube.js')
@@ -20744,7 +20516,6 @@ var Cone = require('../objects/cone.js')
 var Triangle = require('../objects/triangle.js')
 var Plane = require('../objects/plane.js')
 var ShaderProgram = require('../shaderprogram.js')
-var BlockGenerator = require('./block-generate')
 var VoronoiGenerator = require('./voronoi-generate')
 var Projector = require('./projector')
 var VelocityCalculator = require('./velocity-calculate')
@@ -20774,109 +20545,15 @@ var BioCrowds = function(gl, options) {
 
   console.log(options)
 
-  var Marker = function(x, z) {
-    return {
-      pos: vec3.fromValues(x, 0, z),
-      col: [0.2, 0.2, 0.2, 1]
-    }
-  }
-
   var gridWidth = Math.ceil(options.sizeX / options.gridSize)
   var gridDepth = Math.ceil(options.sizeZ / options.gridSize)
   options.gridWidth = gridWidth
   options.gridDepth = gridDepth
 
-  var Grid = function() {
-    
-    var GridCell = function(x, z) {
-      var cell = {
-        items: [],
-
-        getIdx: function() {
-          return [x, z]
-        }
-      }
-
-      return cell
-    }
-
-    var grid = {
-      cells: [],
-
-      cellIdx: function(x, z) {
-        return parseInt(x) + parseInt(z) * gridDepth
-      },
-
-      cellAt: function(x, z) {
-        var xIdx = (x - options.originX) / options.gridSize
-        var zIdx = (z - options.originZ) / options.gridSize
-        if (xIdx < 0 || xIdx >= gridWidth || zIdx < 0 || zIdx >= gridDepth) {
-          return -1
-        }
-        return grid.cellIdx(xIdx, zIdx)
-      },
-
-      cellAtPos: function(vec) {
-        return grid.cellAt(vec[0], vec[2])
-      },
-
-      addItem: function(item, x, z) {
-        grid.cells[grid.cellAt(x, z)].items.push(item)
-      },
-
-      cellsInRadius: function(pos, r) {
-        var xL = pos[0]-r//parseInt((pos[0]-r - options.originX) / options.gridSize)
-        var xH = pos[0]+r//parseInt((pos[0]+r - options.originX) / options.gridSize)
-        var zL = pos[2]-r//parseInt((pos[2]-r - options.originZ) / options.gridSize)
-        var zH = pos[2]+r//parseInt((pos[2]+r - options.originZ) / options.gridSize)
-        
-        var cells = []
-        /*for (var x = xL; x <= xH; x += 1) {
-          for (var z = zL; z <= zH ; z += 1) {
-            if (x >= 0 && x < gridWidth && z >= 0 && z < gridDepth) {
-              cells.push(grid.cellIdx(x, z))
-            }
-          }
-        }*/
-        for (var x = xL; x <= xH; x += options.gridSize) {
-          for (var z = zL; z <= zH ; z += options.gridSize) {
-            var cell = grid.cellAt(x, z)
-            if (cell >= 0) {
-              cells.push(cell)
-            }
-          }
-        }
-        return cells
-      },
-
-      itemsInRadius: function(pos, r) {
-        var cells = grid.cellsInRadius(pos, r)
-        var items = []
-        for (var i = 0; i < cells.length; i++) {
-          items.push.apply(items, grid.cells[i].items)
-        }
-        return items
-      }
-    }
-
-    for (var cellX = 0; cellX < gridWidth; cellX++) {
-      for (var cellZ = 0; cellZ < gridDepth; cellZ++) {
-        grid.cells.push(GridCell(cellX, cellZ))
-      }   
-    }
-
-    return grid
-  }
-
-  var markers = []
-  var markerGrid
   var agents= []
   var drawables = []
 
-  var voronoiBuffer = new Uint8Array(options.gridWidth*options.gridDepth*4)
-
   var projector
-  var blockGenerator
   var voronoiGenerator
   var velocityCalculator
   var voronoiRefine
@@ -20885,12 +20562,8 @@ var BioCrowds = function(gl, options) {
 
   var bioCrowds = {
     init: function() {
-      markerGrid = Grid()
-
       var GL = gl.getGL()
       projector = new Projector(options)
-      blockGenerator = new BlockGenerator(GL, projector, options)
-      // voronoiGenerator = new VoronoiGenerator(GL, projector, options)
       voronoiGenerator = new VoronoiGenerator(options)
       velocityCalculator = new VelocityCalculator(options)
       voronoiRefine = new VoronoiRefine(options)
@@ -20994,17 +20667,6 @@ var BioCrowds = function(gl, options) {
     step: function(t) {
       var GL = gl.getGL()
 
-      /*gl.VoronoiShader.setViewProj(projector.viewproj)
-
-      GL.bindFramebuffer(GL.FRAMEBUFFER, voronoi_fbo)
-      GL.viewport(0, 0, options.gridWidth, options.gridDepth)
-      GL.clear( GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
-      gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)
-
-      GL.bindFramebuffer(GL.FRAMEBUFFER, null)
-      GL.viewport(0, 0, 150, 150)
-      GL.clear( GL.DEPTH_BUFFER_BIT )
-      gl.VoronoiShader.draw(voronoiGenerator.buffer(), true)*/
       voronoiGenerator.setViewProj(projector.viewproj)
 
       GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiGenerator.fbo)
@@ -21065,7 +20727,7 @@ var BioCrowds = function(gl, options) {
 }
 
 module.exports = BioCrowds
-},{"../lib/sobol.js":196,"../objects/cone.js":199,"../objects/cube.js":200,"../objects/cylinder.js":201,"../objects/plane.js":202,"../objects/triangle.js":204,"../shaderprogram.js":207,"./block-generate":186,"./projector":189,"./textured-plane":190,"./velocity-calculate":191,"./voronoi-generate":192,"./voronoi-refine":193}],189:[function(require,module,exports){
+},{"../lib/sobol.js":194,"../objects/cone.js":197,"../objects/cube.js":198,"../objects/cylinder.js":199,"../objects/plane.js":200,"../objects/triangle.js":202,"../shaderprogram.js":205,"./projector":187,"./textured-plane":188,"./velocity-calculate":189,"./voronoi-generate":190,"./voronoi-refine":191}],187:[function(require,module,exports){
 'use strict'
 
 module.exports = function(options) {
@@ -21101,7 +20763,7 @@ module.exports = function(options) {
   return projector
 
 }
-},{}],190:[function(require,module,exports){
+},{}],188:[function(require,module,exports){
 'use strict'
 
 var GL = require('../gl.js')
@@ -21214,7 +20876,7 @@ module.exports = function(options) {
   }
 }
 
-},{"../gl.js":195,"../objects/plane.js":202}],191:[function(require,module,exports){
+},{"../gl.js":193,"../objects/plane.js":200}],189:[function(require,module,exports){
 'use strict'
 
 var GL = require('../gl.js')
@@ -21479,7 +21141,7 @@ module.exports = function(options) {
     gl.disableVertexAttribArray(shaderProgram.attrUv)
   }
 }
-},{"../gl.js":195}],192:[function(require,module,exports){
+},{"../gl.js":193}],190:[function(require,module,exports){
 'use strict'
 
 var Cone = require('../objects/cone.js')
@@ -21676,7 +21338,7 @@ module.exports = function(options) {
     }
   }
 }
-},{"../gl.js":195,"../objects/cone.js":199,"../objects/skewed-cone.js":203}],193:[function(require,module,exports){
+},{"../gl.js":193,"../objects/cone.js":197,"../objects/skewed-cone.js":201}],191:[function(require,module,exports){
 'use strict'
 
 var GL = require('../gl.js')
@@ -21769,7 +21431,7 @@ module.exports = function(options) {
     // gl.bindFramebuffer(gl.FRAMEBUFFER, null)
   }
 }
-},{"../gl.js":195}],194:[function(require,module,exports){
+},{"../gl.js":193}],192:[function(require,module,exports){
 'use strict'
 
 var DEG2RAD = 3.14159265 / 180
@@ -21900,7 +21562,7 @@ var Camera = function(w, h) {
 }
 
 module.exports = Camera
-},{}],195:[function(require,module,exports){
+},{}],193:[function(require,module,exports){
 'use strict'
 
 var GL
@@ -21957,7 +21619,7 @@ module.exports =  {
     }
   }
 }
-},{}],196:[function(require,module,exports){
+},{}],194:[function(require,module,exports){
 (function (process){
 var BITS = 52;
 var SCALE = 2 << 51;
@@ -43231,7 +42893,7 @@ function test(){
 }
 if(require.main === module) return test();
 }).call(this,require('_process'))
-},{"_process":3}],197:[function(require,module,exports){
+},{"_process":3}],195:[function(require,module,exports){
 'use strict';
 
 var domready = require("domready");
@@ -43427,7 +43089,7 @@ domready(function () {
   loadScene(CircleScene)
   runSimulation()
 })
-},{"./biocrowds":188,"./mygl.js":198,"./objects/cube.js":200,"./objects/plane.js":202,"./scenes/circle.js":205,"./scenes/oncoming.js":206,"./shaderprogram.js":207,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],198:[function(require,module,exports){
+},{"./biocrowds":186,"./mygl.js":196,"./objects/cube.js":198,"./objects/plane.js":200,"./scenes/circle.js":203,"./scenes/oncoming.js":204,"./shaderprogram.js":205,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],196:[function(require,module,exports){
 'use strict';
 
 var Cube = require('./objects/cube.js')
@@ -43481,28 +43143,14 @@ module.exports = function() {
     gl.lineWidth(1.0)
     
     this.Lambert = new ShaderProgram(gl, [
-      require('./shaders/lambert-vs.js'), 
-      require('./shaders/lambert-fs.js')
-    ])
-    this.MarkerShader = new ShaderProgram(gl, [ 
-      require('./shaders/marker-vs.js'),
-      require('./shaders/marker-fs.js')
-    ])
-    this.VoronoiShader = new ShaderProgram(gl, [ 
-      require('./shaders/voronoi-vs.js'),
-      require('./shaders/voronoi-fs.js')
-    ])
-    this.PixelShader = new ShaderProgram(gl, [
-      require('./shaders/pixel-vs.js'),
-      require('./shaders/marker-fs.js')
-    ])
-    this.VelocityShader = new ShaderProgram(gl, [ 
-      require('./shaders/velocity-vs.js'),
-      require('./shaders/velocity-fs.js')
-    ])
-    this.TestShader = new ShaderProgram(gl, [ 
-      require('./shaders/test-vs.js'),
-      require('./shaders/test-fs.js')
+      {
+        src: lambert_vertex_shader_src,
+        type: 'VERT'
+      },
+      {
+        src: lambert_fragment_shader_src,
+        type: 'FRAG'
+      }
     ])
 
     // SETUP MOUSE HANDLERS
@@ -43573,7 +43221,6 @@ module.exports = function() {
 
     cam.viewProj(this.viewProj);
     this.Lambert.setViewProj(this.viewProj);
-    this.MarkerShader.setViewProj(this.viewProj);
 
     /*var model = mat4.create();
     var plane = {
@@ -43595,7 +43242,7 @@ module.exports = function() {
     }
   }
 }
-},{"./camera.js":194,"./gl.js":195,"./objects/cone.js":199,"./objects/cube.js":200,"./objects/cylinder.js":201,"./objects/plane.js":202,"./objects/skewed-cone.js":203,"./objects/triangle.js":204,"./shaderprogram.js":207,"./shaders/lambert-fs.js":208,"./shaders/lambert-vs.js":209,"./shaders/marker-fs.js":210,"./shaders/marker-vs.js":211,"./shaders/pixel-vs.js":212,"./shaders/test-fs.js":213,"./shaders/test-vs.js":214,"./shaders/velocity-fs.js":215,"./shaders/velocity-vs.js":216,"./shaders/voronoi-fs.js":217,"./shaders/voronoi-vs.js":218}],199:[function(require,module,exports){
+},{"./camera.js":192,"./gl.js":193,"./objects/cone.js":197,"./objects/cube.js":198,"./objects/cylinder.js":199,"./objects/plane.js":200,"./objects/skewed-cone.js":201,"./objects/triangle.js":202,"./shaderprogram.js":205}],197:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 15
@@ -43712,7 +43359,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],200:[function(require,module,exports){
+},{}],198:[function(require,module,exports){
 'use strict'
 
 var cubeVertexPositionBuffer
@@ -43851,7 +43498,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],201:[function(require,module,exports){
+},{}],199:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 20
@@ -43976,7 +43623,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],202:[function(require,module,exports){
+},{}],200:[function(require,module,exports){
 'use strict'
 
 var vertexPositionBuffer
@@ -44065,7 +43712,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],203:[function(require,module,exports){
+},{}],201:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 15
@@ -44184,7 +43831,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],204:[function(require,module,exports){
+},{}],202:[function(require,module,exports){
 'use strict'
 
 var PI = 3.14159265
@@ -44256,7 +43903,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],205:[function(require,module,exports){
+},{}],203:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -44308,7 +43955,7 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],206:[function(require,module,exports){
+},{"onecolor":4}],204:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -44374,7 +44021,7 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],207:[function(require,module,exports){
+},{"onecolor":4}],205:[function(require,module,exports){
 'use strict';
 
 var ANGLE_initialized = false;
@@ -44554,385 +44201,4 @@ module.exports = function (gl, shaders) {
 
   this.init(shaders);
 }
-},{}],208:[function(require,module,exports){
-'use strict'
-
-var src = '\
-precision highp float;\
-varying vec4 fs_col;\
-varying vec4 fs_nor;\
-varying vec4 lightVec;\
-void main(void) {\
-  float diffuseTerm = dot(normalize(fs_nor), normalize(lightVec));\
-  if (diffuseTerm < 0.0) {\
-    diffuseTerm = diffuseTerm * -0.3;\
-  }\
-  diffuseTerm = clamp(diffuseTerm, 0.0, 1.0);\
-  float ambientTerm = 0.2;\
-  float lightIntensity = diffuseTerm + ambientTerm;\
-  gl_FragColor = vec4(fs_col.rgb * lightIntensity, fs_col.a);\
-}\
-'
-
-var type = 'FRAG'
-
-module.exports = {
-  src: src,
-  type: type
-}
-},{}],209:[function(require,module,exports){
-'use strict'
-
-var src = '\
-attribute vec4 vs_pos;\
-attribute vec4 vs_col;\
-attribute vec4 vs_nor;\
-varying vec4 fs_col;\
-varying vec4 fs_nor;\
-uniform mat4 u_Model;\
-uniform mat4 u_ViewProj;\
-uniform mat4 u_InvTrans;\
-uniform vec4 u_Color;\
-varying vec4 lightVec;\
-const vec4 lightPos = vec4(20, 50, 30, 1);\
-void main(void) {\
-  vec4 modelposition = u_Model * vs_pos;\
-  gl_Position = u_ViewProj * modelposition;\
-  fs_col = u_Color;\
-  fs_nor = u_InvTrans * vs_nor;\
-  lightVec = lightPos - modelposition;\
-}\
-'
-
-var type = 'VERT'
-
-module.exports = {
-  src: src,
-  type: type
-}
-},{}],210:[function(require,module,exports){
-'use strict'
-
-var src = '\
-precision highp float;\
-varying vec4 fs_col;\
-void main(void) {\
-  gl_FragColor = fs_col;\
-}\
-'
-
-var type = 'FRAG'
-
-module.exports = {
-  src: src,
-  type: type
-}
-},{}],211:[function(require,module,exports){
-'use strict'
-
-var src ='\
-attribute vec4 vs_pos;\
-attribute vec4 vs_col;\
-varying vec4 fs_col;\
-uniform mat4 u_ViewProj;\
-void main(void) {\
-  gl_Position = u_ViewProj * vs_pos;\
-  gl_PointSize = 2.0;\
-  fs_col = vs_col;\
-}\
-'
-
-var type = 'VERT'
-
-module.exports = {
-  src: src,
-  type: type
-}
-},{}],212:[function(require,module,exports){
-'use strict'
-
-var src = '\
-attribute vec4 vs_pos;\
-attribute vec4 vs_col;\
-varying vec4 fs_col;\
-void main(void) {\
-  fs_col = vs_col;\
-  gl_Position = vs_pos;\
-}\
-'
-
-var type = 'VERT'
-
-module.exports = {
-  src: src,
-  type: type
-}
-},{}],213:[function(require,module,exports){
-'use strict'
-
-var src = '\
-precision highp float;\
-uniform sampler2D u_image0; \
-varying vec2 fs_uv;\
-varying vec4 fs_col;\
-void main(void) {\
-  gl_FragColor = fs_col;\
-}\
-'
-
-var type = 'FRAG'
-
-module.exports = {
-  src: src,
-  type: type
-}
-},{}],214:[function(require,module,exports){
-'use strict'
-
-var src = '\
-attribute vec4 vs_pos;\
-attribute vec2 vs_uv;\
-attribute vec4 vs_col;\
-varying vec2 fs_uv;\
-varying vec4 fs_col;\
-void main(void) {\
-  gl_Position = vs_pos;\
-  fs_uv = vs_uv;\
-  fs_col = vs_col;\
-}\
-'
-
-var type = 'VERT'
-
-module.exports = {
-  src: src,
-  type: type
-}
-},{}],215:[function(require,module,exports){
-'use strict'
-
-var src = '\
-precision highp float;\
-uniform sampler2D u_image0; \
-uniform sampler2D u_image1; \
-uniform sampler2D u_weights; \
-uniform float u_R;\
-uniform float numAgents;\
-uniform vec2 windowSize;\
-uniform vec2 u_gridSize;\
-uniform int drawMode;\
-varying vec2 fs_uv;\
-const int R = 30;\
-\
-int toID(vec4 col) {\
-  int RES = 10;\
-  return int(col.r*float(RES)+0.5) + int(col.g*float(RES)+0.5)*RES + int(col.b*float(RES)+0.5)*RES*RES;\
-}\
-\
-void main(void) {\
-  vec4 col = texture2D(u_image0, fs_uv);\
-  int id = toID(col);\
-  vec4 data = texture2D(u_image1, vec2(float(id)/(numAgents-0.5), 0.0));\
-  vec3 pos = vec3(data.xy, 0);\
-  vec3 gol = vec3(data.zw, 0);\
-  vec3 golVec = gol - pos;\
-\
-\
-  if (drawMode == 3) {\
-    vec3 cumul = vec3(0,0,0);\
-    float totalWeight = 0.0;\
-    for (int i = -R; i < R; i++) {\
-      for (int j = -R; j < R; j++) {\
-        vec2 uv = fs_uv + vec2(i, j) / windowSize;\
-        col = texture2D(u_image0, uv);\
-        if (id == toID(col)) {\
-          vec3 marker = 2.0*vec3(uv, 0) - vec3(1,1,0);\
-          vec3 markerVec = vec3(uv, 0) - pos;\
-          float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));\
-          bool mask = length(markerVec) < float(R);\
-          weight = float(mask) * weight;\
-          totalWeight += weight;\
-        }\
-      }\
-    }\
-    for (int i = -R; i < R; i++) {\
-      for (int j = -R; j < R; j++) {\
-        vec2 uv = fs_uv + vec2(i, j) / windowSize;\
-        col = texture2D(u_image0, uv);\
-        if (id == toID(col)) {\
-          vec3 marker = 2.0*vec3(uv, 0) - vec3(1,1,0);\
-          vec3 markerVec = vec3(uv, 0) - pos;\
-          float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));\
-          bool mask = length(markerVec) < float(R);\
-          weight = float(mask) * weight / totalWeight;\
-          cumul += markerVec*weight;\
-        }\
-      }\
-    }\
-    gl_FragColor = vec4(normalize(cumul)*0.5 + vec3(0.5,0.5,0), 1);\
-    gl_FragColor = vec4(cumul, 1);\
-    return;\
-  }\
-\
-\
-  \
-  vec3 marker = 2.0*vec3(fs_uv, 0) - vec3(1,1,0);\
-  vec3 markerVec = marker - pos;\
-  golVec = gol - pos;\
-  float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));\
-  bool mask = length(markerVec) < 0.2;\
-  weight = float(mask) * weight;\
-\
-  if (drawMode == 0) {\
-    gl_FragColor = vec4(weight,weight,weight,1);\
-    return;\
-  } else if (drawMode == 1) {\
-    gl_FragColor = vec4(float(mask) * abs(normalize(golVec)), 1);\
-    return;\
-  } else if (drawMode == 2) {\
-    gl_FragColor = vec4(float(mask) * abs(normalize(markerVec)), 1);\
-  }\
-}'
-
-var type = 'FRAG'
-
-module.exports = {
-  src: src,
-  type: type
-}
-
-/*
-
-  \
-  for (int i = -R; i < R; i++) {\
-    for (int j = -R; j < R; j++) {\
-      vec2 uv = fs_uv + vec2(i, j) / windowSize;\
-      col = texture2D(u_image0, uv);\
-      if (id != toID(col)) {\
-        gl_FragColor = vec4(0,0,0,1);\
-      }\
-    }\
-  }\
-
-  vec4 curCol = texture2D(u_image0, fs_uv);\
-  int id = toID(curCol);\
-\
-  int border = 0;\
-  vec4 col = vec4(0,0,0,0);\
-  for (int i = -2; i < 2; i++) {\
-    for (int j = -2; j < 2; j++) {\
-      vec2 uv = fs_uv + vec2(i, j) / windowSize;\
-      col = texture2D(u_image0, uv);\
-      if (id != toID(col)) {\
-        border = 1;\
-        gl_FragColor = vec4(1,1,1,1);\
-        return;\
-      }\
-    }\
-  }\
-
-  float totalWeight = 0.0;\
-  for (int i = -R; i < R; i++) {\
-    for (int j = -R; j < R; j++) {\
-      vec2 uv = fs_uv + vec2(i, j) / windowSize;\
-      col = texture2D(u_image0, uv);\
-      if (id == toID(col)) {\
-        vec3 marker = vec3(uv, 0);\
-        vec3 markerVec = marker - pos;\
-        bool mask = length(markerVec) <= float(R);\
-        vec3 golVec = gol - pos;\
-        float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));\
-        totalWeight += float(mask) * weight;\
-      }\
-    }\
-  }\
-  for (int i = -R; i < R; i++) {\
-    for (int j = -R; j < R; j++) {\
-      vec2 uv = fs_uv + vec2(i, j) / windowSize;\
-      col = texture2D(u_image0, uv);\
-      if (id == toID(col)) {\
-        vec3 marker = vec3(uv, 0);\
-        vec3 markerVec = marker - pos;\
-        bool mask = length(markerVec) <= float(R);\
-        vec3 golVec = gol - pos;\
-        float weight = 1.0 + dot(normalize(markerVec), normalize(golVec));\
-        weight = float(mask) * weight / totalWeight;\
-        gl_FragColor = vec4(weight, weight, weight, 1);\
-      }\
-    }\
-  }\
-
-  */
-},{}],216:[function(require,module,exports){
-'use strict'
-
-var src = '\
-attribute vec4 vs_pos;\
-attribute vec2 vs_uv;\
-varying vec2 fs_uv;\
-void main(void) {\
-  gl_Position = vs_pos;\
-  gl_PointSize = 2.0;\
-  fs_uv = vs_uv;\
-}\
-'
-
-var type = 'VERT'
-
-module.exports = {
-  src: src,
-  type: type
-}
-},{}],217:[function(require,module,exports){
-arguments[4][210][0].apply(exports,arguments)
-},{"dup":210}],218:[function(require,module,exports){
-'use strict'
-
-var src = '\
-attribute vec4 vs_pos;\
-attribute vec3 vs_offset;\
-attribute vec3 vs_velocity;\
-attribute vec3 vs_id;\
-varying vec4 fs_col;\
-uniform mat4 u_ViewProj;\
-\
-mat4 rotationMatrix(vec3 axis, float angle)\
-{\
-    axis = normalize(axis);\
-    float s = sin(angle);\
-    float c = cos(angle);\
-    float oc = 1.0 - c;\
-    \
-    return mat4(oc * axis.x * axis.x + c,           oc * axis.x * axis.y - axis.z * s,  oc * axis.z * axis.x + axis.y * s,  0.0,\
-                oc * axis.x * axis.y + axis.z * s,  oc * axis.y * axis.y + c,           oc * axis.y * axis.z - axis.x * s,  0.0,\
-                oc * axis.z * axis.x - axis.y * s,  oc * axis.y * axis.z + axis.x * s,  oc * axis.z * axis.z + c,           0.0,\
-                0.0,                                0.0,                                0.0,                                1.0);\
-}\
-\
-float atan2(in float y, in float x)\
-{\
-    bool s = (abs(x) > abs(y)); \
-    float v1 = 3.14159265/2.0 - atan(x,y);\
-    float v2 = atan(x,y);\
-    return (1.0-float(s))*v1 + float(s)*v2;\
-}\
-\
-void main(void) { \
-  fs_col = vec4(vs_id, 1); \
-  vec3 pos = vec3(vs_pos.x, 0, vs_pos.z); \
-  vec3 vel = normalize(vs_velocity);\
-  mat4 rot = rotationMatrix(vec3(0,1,0), atan2(-vel.z, vel.x)); \
-  float fac = 2.0 + dot(normalize(pos), normalize(vs_velocity)); \
-  fac = fac / 3.0; \
-  pos = vec3(rot * vs_pos); \
-  gl_Position = u_ViewProj * (vec4(pos,1) + vec4(vs_offset, 0)); \
-} \
-'
-
-var type = 'VERT'
-
-module.exports = {
-  src: src,
-  type: type
-}
-},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218]);
+},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205]);

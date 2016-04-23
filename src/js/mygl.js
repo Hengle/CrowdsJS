@@ -51,28 +51,14 @@ module.exports = function() {
     gl.lineWidth(1.0)
     
     this.Lambert = new ShaderProgram(gl, [
-      require('./shaders/lambert-vs.js'), 
-      require('./shaders/lambert-fs.js')
-    ])
-    this.MarkerShader = new ShaderProgram(gl, [ 
-      require('./shaders/marker-vs.js'),
-      require('./shaders/marker-fs.js')
-    ])
-    this.VoronoiShader = new ShaderProgram(gl, [ 
-      require('./shaders/voronoi-vs.js'),
-      require('./shaders/voronoi-fs.js')
-    ])
-    this.PixelShader = new ShaderProgram(gl, [
-      require('./shaders/pixel-vs.js'),
-      require('./shaders/marker-fs.js')
-    ])
-    this.VelocityShader = new ShaderProgram(gl, [ 
-      require('./shaders/velocity-vs.js'),
-      require('./shaders/velocity-fs.js')
-    ])
-    this.TestShader = new ShaderProgram(gl, [ 
-      require('./shaders/test-vs.js'),
-      require('./shaders/test-fs.js')
+      {
+        src: lambert_vertex_shader_src,
+        type: 'VERT'
+      },
+      {
+        src: lambert_fragment_shader_src,
+        type: 'FRAG'
+      }
     ])
 
     // SETUP MOUSE HANDLERS
@@ -143,7 +129,6 @@ module.exports = function() {
 
     cam.viewProj(this.viewProj);
     this.Lambert.setViewProj(this.viewProj);
-    this.MarkerShader.setViewProj(this.viewProj);
 
     /*var model = mat4.create();
     var plane = {
