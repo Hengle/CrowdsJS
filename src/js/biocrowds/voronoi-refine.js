@@ -6,9 +6,12 @@ module.exports = function(options) {
   var gl = GL.get()
   var ext = gl.getExtension("ANGLE_instanced_arrays")
 
+  var shrinkAmnt = parseInt(Math.ceil(0.5 / options.gridSize / 2))
+  var frag_shader = voronoi_refine_fragment_shader_src.replace(/1337/g, shrinkAmnt)
+
   var shaderProgram = gl.createProgram()
   gl.attachShader(shaderProgram, GL.getShader(voronoi_refine_vertex_shader_src, gl.VERTEX_SHADER))
-  gl.attachShader(shaderProgram, GL.getShader(voronoi_refine_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(frag_shader, gl.FRAGMENT_SHADER))
   gl.linkProgram(shaderProgram)
 
   if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {

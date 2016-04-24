@@ -13,6 +13,7 @@ var Projector = require('./projector')
 var VelocityCalculator = require('./velocity-calculate')
 var VoronoiRefine = require('./voronoi-refine')
 var TexturedPlane = require('./textured-plane')
+var NoiseGenerator = require('./noise-generator')
 
 var defaultOptions = {
   originX: -16,
@@ -20,6 +21,7 @@ var defaultOptions = {
   sizeX: 32,
   sizeZ: 32,
   gridSize: 0.125,
+  searchRadius: 2
 }
 
 var BioCrowds = function(gl, options) {
@@ -46,14 +48,21 @@ var BioCrowds = function(gl, options) {
   var voronoiRefine
   var groundPlane
   var groundPlaneObj
+  var comfortTex
 
   var bioCrowds = {
     init: function() {
       var GL = gl.getGL()
+      var noiseGenerator = new NoiseGenerator()
       projector = new Projector(options)
       voronoiGenerator = new VoronoiGenerator(options)
       velocityCalculator = new VelocityCalculator(options)
       voronoiRefine = new VoronoiRefine(options)
+      //comfortTex = noiseGenerator.generate(options.gridWidth, options.gridDepth, 3)
+
+      if (options.comfortTexture) {
+        comfortTex = require('../gl').loadImageTexture(options.comfortTexture)
+      }
 
       var planeTrans = mat4.create()
       mat4.scale(planeTrans, planeTrans, vec3.fromValues(options.sizeX, 1, options.sizeZ))
@@ -82,6 +91,8 @@ var BioCrowds = function(gl, options) {
         groundPlaneObj.setTexture(voronoiRefine.tex)
       } else if (options.vis.groundPlane == 'weights') {
         groundPlaneObj.setTexture(velocityCalculator.tex)
+      } else if (options.vis.groundPlane == 'comfort') {
+        groundPlaneObj.setTexture(comfortTex)
       }
       voronoiGenerator.initAgentBuffers(agents)
     },
@@ -147,7 +158,8 @@ var BioCrowds = function(gl, options) {
         gl.drawables.push(agent)
         drawables.push(agent)
       }
-      velocityCalculator.init(agents, projector)
+      // velocityCalculator.init(agents, projector)
+      velocityCalculator.init(agents, projector, comfortTex)
       voronoiGenerator.initAgentBuffers(agents)
     },
 
@@ -182,6 +194,7 @@ var BioCrowds = function(gl, options) {
       GL.viewport(0, 0, options.gridWidth, options.gridDepth)
       velocityCalculator.draw()
 
+      var velDir = vec3.create()
       var projected = vec3.create()
       for (var i = 0; i < agents.length; i++) {
         if (agents[i].finished) continue
@@ -190,13 +203,37 @@ var BioCrowds = function(gl, options) {
         var v = 0.5*(projected[1]+1)
 
         var vel = velocityCalculator.getVelocityAt(u, v)
-        if (vec3.length(vel) > 0) {
-          vec3.lerp(agents[i].forward, agents[i].forward, vel, vec3.length(vel)/8);
-          // vec3.copy(agents[i].forward, vel)
+        
+        if (isNaN(vel[0]) || isNaN(vel[2])) {
+          continue
         }
-        vec3.copy(agents[i].vel, vel)
-        vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
 
+        vec3.normalize(velDir, vel)
+
+        if (vec3.length(vel) > 0) {
+          vec3.lerp(agents[i].forward, agents[i].forward, velDir, Math.min(0.75,t/0.1));
+          vec3.copy(agents[i].vel, vel)
+          vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
+        }
+
+        /*if (isNaN(velDir[0]) || isNaN(velDir[2])) {
+          continue
+        }
+        var vel = vec3.create()
+        if (vec3.length(velDir) > 0) {
+          var amnt = vec3.length(velDir)
+          // console.log(amnt)
+          vec3.lerp(agents[i].forward, agents[i].forward, velDir, Math.min(1, Math.max(5*t, 6*t*amnt)))
+          // vec3.lerp(agents[i].forward, agents[i].forward, vel, vec3.length(vel)/8);
+          // vec3.copy(agents[i].forward, vel)
+          // vec3.scale(vel, velDir, 1/options.gridSize)
+          vec3.copy(agents[i].vel, vel)
+          vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
+        } else {
+          vec3.sub(velDir, agents[i].goal, agents[i].pos)
+          vec3.lerp(agents[i].forward, agents[i].forward, velDir, 3*t)
+        }*/
+        
         if (vec3.distance(agents[i].pos, agents[i].goal) < 0.5) {
           agents[i].finished = true;
         }

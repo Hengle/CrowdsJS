@@ -10,6 +10,7 @@ var Plane = require('./objects/plane.js')
 var BioCrowds = require('./biocrowds')
 var CircleScene = require('./scenes/circle.js')
 var OncomingScene = require('./scenes/oncoming.js')
+var ComfortScene = require('./scenes/comfort.js')
 
 var layout = {
   root: 0,
@@ -113,15 +114,20 @@ domready(function () {
     loadScene(OncomingScene)
   }
 
+  document.getElementById('comfort-scene-btn').onclick = function() {
+    loadScene(ComfortScene)
+  }
+
   var simulationInterval
 
-  var diff = 16.66666
+  var diff = 33.33333
   var stepSimulation = function() {
     var t0 = performance.now()
     gl.draw()
-    biocrowds.step(diff / 1000)
+    //biocrowds.step(diff / 1000)
+    biocrowds.step(1 / 24)
     var t1 = performance.now()
-    diff = Math.max(t1 - t0, 16.66666)
+    diff = Math.max(t1 - t0, 1000/80)
     var fps = 1000/diff;
     document.getElementById('fps').innerHTML = fps.toFixed(3) + ' fps';
     simulationInterval = setTimeout(stepSimulation, diff)

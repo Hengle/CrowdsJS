@@ -5,7 +5,7 @@ uniform sampler2D u_image;
 uniform vec2 windowSize;
 uniform float u_gScale;
 varying vec2 fs_uv;
-const int R = 2;
+const int R = 1337;
 
 void main(void) {
   vec4 col = texture2D(u_image, fs_uv);
