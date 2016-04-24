@@ -20529,6 +20529,7 @@ var defaultOptions = {
   sizeX: 32,
   sizeZ: 32,
   gridSize: 0.125,
+  searchRadius: 2
 }
 
 var BioCrowds = function(gl, options) {
@@ -20555,7 +20556,7 @@ var BioCrowds = function(gl, options) {
   var voronoiRefine
   var groundPlane
   var groundPlaneObj
-  var noiseTex
+  var comfortTex
 
   var bioCrowds = {
     init: function() {
@@ -20565,7 +20566,11 @@ var BioCrowds = function(gl, options) {
       voronoiGenerator = new VoronoiGenerator(options)
       velocityCalculator = new VelocityCalculator(options)
       voronoiRefine = new VoronoiRefine(options)
-      noiseTex = noiseGenerator.generate(options.gridWidth, options.gridDepth, 3)
+      //comfortTex = noiseGenerator.generate(options.gridWidth, options.gridDepth, 3)
+
+      if (options.comfortTexture) {
+        comfortTex = require('../gl').loadImageTexture(options.comfortTexture)
+      }
 
       var planeTrans = mat4.create()
       mat4.scale(planeTrans, planeTrans, vec3.fromValues(options.sizeX, 1, options.sizeZ))
@@ -20594,8 +20599,8 @@ var BioCrowds = function(gl, options) {
         groundPlaneObj.setTexture(voronoiRefine.tex)
       } else if (options.vis.groundPlane == 'weights') {
         groundPlaneObj.setTexture(velocityCalculator.tex)
-      } else if (options.vis.groundPlane == 'noise') {
-        groundPlaneObj.setTexture(noiseTex)
+      } else if (options.vis.groundPlane == 'comfort') {
+        groundPlaneObj.setTexture(comfortTex)
       }
       voronoiGenerator.initAgentBuffers(agents)
     },
@@ -20662,7 +20667,7 @@ var BioCrowds = function(gl, options) {
         drawables.push(agent)
       }
       // velocityCalculator.init(agents, projector)
-      velocityCalculator.init(agents, projector, noiseTex)
+      velocityCalculator.init(agents, projector, comfortTex)
       voronoiGenerator.initAgentBuffers(agents)
     },
 
@@ -20697,6 +20702,7 @@ var BioCrowds = function(gl, options) {
       GL.viewport(0, 0, options.gridWidth, options.gridDepth)
       velocityCalculator.draw()
 
+      var velDir = vec3.create()
       var projected = vec3.create()
       for (var i = 0; i < agents.length; i++) {
         if (agents[i].finished) continue
@@ -20705,13 +20711,37 @@ var BioCrowds = function(gl, options) {
         var v = 0.5*(projected[1]+1)
 
         var vel = velocityCalculator.getVelocityAt(u, v)
-        if (vec3.length(vel) > 0) {
-          vec3.lerp(agents[i].forward, agents[i].forward, vel, vec3.length(vel)/8);
-          // vec3.copy(agents[i].forward, vel)
+        
+        if (isNaN(vel[0]) || isNaN(vel[2])) {
+          continue
         }
-        vec3.copy(agents[i].vel, vel)
-        vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
 
+        vec3.normalize(velDir, vel)
+
+        if (vec3.length(vel) > 0) {
+          vec3.lerp(agents[i].forward, agents[i].forward, velDir, Math.min(0.75,t/0.1));
+          vec3.copy(agents[i].vel, vel)
+          vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
+        }
+
+        /*if (isNaN(velDir[0]) || isNaN(velDir[2])) {
+          continue
+        }
+        var vel = vec3.create()
+        if (vec3.length(velDir) > 0) {
+          var amnt = vec3.length(velDir)
+          // console.log(amnt)
+          vec3.lerp(agents[i].forward, agents[i].forward, velDir, Math.min(1, Math.max(5*t, 6*t*amnt)))
+          // vec3.lerp(agents[i].forward, agents[i].forward, vel, vec3.length(vel)/8);
+          // vec3.copy(agents[i].forward, vel)
+          // vec3.scale(vel, velDir, 1/options.gridSize)
+          vec3.copy(agents[i].vel, vel)
+          vec3.scaleAndAdd(agents[i].pos, agents[i].pos, agents[i].vel, t)
+        } else {
+          vec3.sub(velDir, agents[i].goal, agents[i].pos)
+          vec3.lerp(agents[i].forward, agents[i].forward, velDir, 3*t)
+        }*/
+        
         if (vec3.distance(agents[i].pos, agents[i].goal) < 0.5) {
           agents[i].finished = true;
         }
@@ -20729,7 +20759,7 @@ var BioCrowds = function(gl, options) {
 }
 
 module.exports = BioCrowds
-},{"../lib/sobol.js":195,"../objects/cone.js":198,"../objects/cube.js":199,"../objects/cylinder.js":200,"../objects/plane.js":201,"../objects/triangle.js":203,"../shaderprogram.js":206,"./noise-generator":187,"./projector":188,"./textured-plane":189,"./velocity-calculate":190,"./voronoi-generate":191,"./voronoi-refine":192}],187:[function(require,module,exports){
+},{"../gl":194,"../lib/sobol.js":195,"../objects/cone.js":198,"../objects/cube.js":199,"../objects/cylinder.js":200,"../objects/plane.js":201,"../objects/triangle.js":203,"../shaderprogram.js":207,"./noise-generator":187,"./projector":188,"./textured-plane":189,"./velocity-calculate":190,"./voronoi-generate":191,"./voronoi-refine":192}],187:[function(require,module,exports){
 var GL = require('../gl.js')
 
 module.exports = function() {
@@ -20972,9 +21002,12 @@ module.exports = function(options) {
   var gl = GL.get()
   var ext = gl.getExtension("ANGLE_instanced_arrays")
 
+  var searchRad = parseInt(options.searchRadius / options.gridSize)
+  var frag_shader = velocity_fragment_shader_src.replace(/1337/g, searchRad)
+
   var shaderProgram = gl.createProgram()
   gl.attachShader(shaderProgram, GL.getShader(velocity_vertex_shader_src, gl.VERTEX_SHADER))
-  gl.attachShader(shaderProgram, GL.getShader(velocity_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(frag_shader, gl.FRAGMENT_SHADER))
   gl.linkProgram(shaderProgram)
 
   if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
@@ -21116,17 +21149,26 @@ module.exports = function(options) {
     }
     var idx = parseInt(u*options.gridWidth) + options.gridWidth*parseInt(v*options.gridDepth)
     // console.log(velocityBuffer[4*idx], velocityBuffer[4*idx+1], velocityBuffer[4*idx+2], velocityBuffer[4*idx+3])
-    var projected = vec4.fromValues(velocityBuffer[4*idx] / 256 * 2 - 1, velocityBuffer[4*idx+1] / 256 * 2 - 1, 0, 0)
-    // console.log(projected[0], projected[1])
+    var projected = vec4.fromValues(
+      velocityBuffer[4*idx] / 256 * 2 - 1, 
+      velocityBuffer[4*idx+1] / 256 * 2 - 1, 
+      0, 0)
+    projected[0] *= options.searchRadius*options.searchRadius
+    projected[1] *= options.searchRadius*options.searchRadius
+    var len = Math.min(options.searchRadius, vec4.length(projected))
+    // len *= 2
+    // console.log(projected)
     // console.log(len)
+  
     vec4.transformMat4(projected, projected, proj.invviewproj)
+    // projected[0] /= options.gridWidth
+    // projected[2] /= options.gridDepth
     projected[1] = 0
-    // vec3.normalize(projected, projected)
+    // vec3.scale(projected, projected, 1/options.gridSize)
+    vec3.normalize(projected, projected)
+    vec3.scale(projected, projected, len)
     // console.log(len)
     // console.log(projected)
-    var len = Math.max(vec4.length(projected), 4)
-    vec3.normalize(projected, projected)
-    vec3.scale(projected, projected, len*options.gridSize*6)
     return projected
   }
 
@@ -21455,9 +21497,12 @@ module.exports = function(options) {
   var gl = GL.get()
   var ext = gl.getExtension("ANGLE_instanced_arrays")
 
+  var shrinkAmnt = parseInt(Math.ceil(0.5 / options.gridSize / 2))
+  var frag_shader = voronoi_refine_fragment_shader_src.replace(/1337/g, shrinkAmnt)
+
   var shaderProgram = gl.createProgram()
   gl.attachShader(shaderProgram, GL.getShader(voronoi_refine_vertex_shader_src, gl.VERTEX_SHADER))
-  gl.attachShader(shaderProgram, GL.getShader(voronoi_refine_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(frag_shader, gl.FRAGMENT_SHADER))
   gl.linkProgram(shaderProgram)
 
   if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
@@ -21725,6 +21770,21 @@ module.exports =  {
       fbo: fbo,
       rbo: rbo
     }
+  },
+
+  loadImageTexture: function(src) {
+    var texture = GL.createTexture()
+    var image = new Image()
+    image.onload = function() {
+      GL.bindTexture(GL.TEXTURE_2D, texture)
+      GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE, image);
+      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.LINEAR);
+      GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.LINEAR_MIPMAP_NEAREST);
+      GL.generateMipmap(GL.TEXTURE_2D);
+      GL.bindTexture(GL.TEXTURE_2D, null);
+    }
+    image.src = src
+    return texture
   }
 }
 },{}],195:[function(require,module,exports){
@@ -43014,6 +43074,7 @@ var Plane = require('./objects/plane.js')
 var BioCrowds = require('./biocrowds')
 var CircleScene = require('./scenes/circle.js')
 var OncomingScene = require('./scenes/oncoming.js')
+var ComfortScene = require('./scenes/comfort.js')
 
 var layout = {
   root: 0,
@@ -43117,15 +43178,20 @@ domready(function () {
     loadScene(OncomingScene)
   }
 
+  document.getElementById('comfort-scene-btn').onclick = function() {
+    loadScene(ComfortScene)
+  }
+
   var simulationInterval
 
-  var diff = 16.66666
+  var diff = 33.33333
   var stepSimulation = function() {
     var t0 = performance.now()
     gl.draw()
-    biocrowds.step(diff / 1000)
+    //biocrowds.step(diff / 1000)
+    biocrowds.step(1 / 24)
     var t1 = performance.now()
-    diff = Math.max(t1 - t0, 16.66666)
+    diff = Math.max(t1 - t0, 1000/80)
     var fps = 1000/diff;
     document.getElementById('fps').innerHTML = fps.toFixed(3) + ' fps';
     simulationInterval = setTimeout(stepSimulation, diff)
@@ -43197,7 +43263,7 @@ domready(function () {
   loadScene(CircleScene)
   runSimulation()
 })
-},{"./biocrowds":186,"./mygl.js":197,"./objects/cube.js":199,"./objects/plane.js":201,"./scenes/circle.js":204,"./scenes/oncoming.js":205,"./shaderprogram.js":206,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],197:[function(require,module,exports){
+},{"./biocrowds":186,"./mygl.js":197,"./objects/cube.js":199,"./objects/plane.js":201,"./scenes/circle.js":204,"./scenes/comfort.js":205,"./scenes/oncoming.js":206,"./shaderprogram.js":207,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],197:[function(require,module,exports){
 'use strict';
 
 var Cube = require('./objects/cube.js')
@@ -43350,7 +43416,7 @@ module.exports = function() {
     }
   }
 }
-},{"./camera.js":193,"./gl.js":194,"./objects/cone.js":198,"./objects/cube.js":199,"./objects/cylinder.js":200,"./objects/plane.js":201,"./objects/skewed-cone.js":202,"./objects/triangle.js":203,"./shaderprogram.js":206}],198:[function(require,module,exports){
+},{"./camera.js":193,"./gl.js":194,"./objects/cone.js":198,"./objects/cube.js":199,"./objects/cylinder.js":200,"./objects/plane.js":201,"./objects/skewed-cone.js":202,"./objects/triangle.js":203,"./shaderprogram.js":207}],198:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 15
@@ -43611,7 +43677,7 @@ module.exports = {
 
 var CYL_COUNT = 20
 var PI = 3.14159265
-var R = 0.5
+var R = 0.25
 var H = 0.5
 
 var vertices = []
@@ -43943,7 +44009,7 @@ module.exports = {
 'use strict'
 
 var PI = 3.14159265
-var R = 0.5
+var R = 0.25
 
 var vertices = []
 var normals = []
@@ -44024,7 +44090,8 @@ var scene = {
       originX: -32,
       originZ: -32,
       sizeX: 64,
-      sizeZ: 64
+      sizeZ: 64,
+      gridSize: 0.125
     }
   },
 
@@ -44075,6 +44142,69 @@ var scene = {
       originZ: -16,
       sizeX: 32,
       sizeZ: 32,
+      gridSize: 0.125,
+      comfortTexture: 'img/comfort.png'
+    }
+  },
+
+  agents: [],
+
+  create: function() {
+    var ID = 0;
+    scene.agents = []
+
+
+
+    for (var i = -10; i < 10; i+=1) {
+
+      var idr = ID % RES
+      var idg = Math.floor(ID / RES) % RES
+      var idb = Math.floor(ID / (RES*RES))
+      ++ID
+
+      scene.agents.push({
+        pos: vec3.fromValues(i, 0, -15),
+        forward: vec3.fromValues(0,0,1),
+        col: vec4.fromValues(1,0,0,1),
+        vel: vec3.create(),
+        goal: vec3.fromValues(i, 0, 15),
+        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+      })
+
+      idr = ID % RES
+      idg = Math.floor(ID / RES) % RES
+      idb = Math.floor(ID / (RES*RES))
+      ++ID
+
+      scene.agents.push({
+        pos: vec3.fromValues(i, 0, 15),
+        forward: vec3.fromValues(0,0,-1),
+        col: vec4.fromValues(0,0,1,1),
+        vel: vec3.create(),
+        goal: vec3.fromValues(i, 0, -15),
+        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+      })
+ 
+    }
+  }
+}
+
+module.exports = scene
+},{"onecolor":4}],206:[function(require,module,exports){
+'use strict'
+
+var Color = require('onecolor') 
+
+var RES = 10
+
+var scene = {
+  options: function() {
+    return {
+      originX: -16,
+      originZ: -16,
+      sizeX: 32,
+      sizeZ: 32,
+      gridSize: 0.125
     }
   },
 
@@ -44111,7 +44241,7 @@ var scene = {
 
         scene.agents.push({
           pos: vec3.fromValues(i, 0, j),
-          forward: vec3.fromValues(0,0,1),
+          forward: vec3.fromValues(0,0,-1),
           col: vec4.fromValues(0,0,1,1),
           vel: vec3.create(),
           goal: vec3.fromValues(0, 0, -10),
@@ -44124,7 +44254,7 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],206:[function(require,module,exports){
+},{"onecolor":4}],207:[function(require,module,exports){
 'use strict';
 
 var ANGLE_initialized = false;
@@ -44304,4 +44434,4 @@ module.exports = function (gl, shaders) {
 
   this.init(shaders);
 }
-},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206]);
+},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207]);

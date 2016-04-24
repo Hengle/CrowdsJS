@@ -11,6 +11,7 @@ var scene = {
       originZ: -16,
       sizeX: 32,
       sizeZ: 32,
+      gridSize: 0.125
     }
   },
 
@@ -47,7 +48,7 @@ var scene = {
 
         scene.agents.push({
           pos: vec3.fromValues(i, 0, j),
-          forward: vec3.fromValues(0,0,1),
+          forward: vec3.fromValues(0,0,-1),
           col: vec4.fromValues(0,0,1,1),
           vel: vec3.create(),
           goal: vec3.fromValues(0, 0, -10),

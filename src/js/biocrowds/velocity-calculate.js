@@ -6,9 +6,12 @@ module.exports = function(options) {
   var gl = GL.get()
   var ext = gl.getExtension("ANGLE_instanced_arrays")
 
+  var searchRad = parseInt(options.searchRadius / options.gridSize)
+  var frag_shader = velocity_fragment_shader_src.replace(/1337/g, searchRad)
+
   var shaderProgram = gl.createProgram()
   gl.attachShader(shaderProgram, GL.getShader(velocity_vertex_shader_src, gl.VERTEX_SHADER))
-  gl.attachShader(shaderProgram, GL.getShader(velocity_fragment_shader_src, gl.FRAGMENT_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(frag_shader, gl.FRAGMENT_SHADER))
   gl.linkProgram(shaderProgram)
 
   if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
@@ -150,17 +153,26 @@ module.exports = function(options) {
     }
     var idx = parseInt(u*options.gridWidth) + options.gridWidth*parseInt(v*options.gridDepth)
     // console.log(velocityBuffer[4*idx], velocityBuffer[4*idx+1], velocityBuffer[4*idx+2], velocityBuffer[4*idx+3])
-    var projected = vec4.fromValues(velocityBuffer[4*idx] / 256 * 2 - 1, velocityBuffer[4*idx+1] / 256 * 2 - 1, 0, 0)
-    // console.log(projected[0], projected[1])
+    var projected = vec4.fromValues(
+      velocityBuffer[4*idx] / 256 * 2 - 1, 
+      velocityBuffer[4*idx+1] / 256 * 2 - 1, 
+      0, 0)
+    projected[0] *= options.searchRadius*options.searchRadius
+    projected[1] *= options.searchRadius*options.searchRadius
+    var len = Math.min(options.searchRadius, vec4.length(projected))
+    // len *= 2
+    // console.log(projected)
     // console.log(len)
+  
     vec4.transformMat4(projected, projected, proj.invviewproj)
+    // projected[0] /= options.gridWidth
+    // projected[2] /= options.gridDepth
     projected[1] = 0
-    // vec3.normalize(projected, projected)
+    // vec3.scale(projected, projected, 1/options.gridSize)
+    vec3.normalize(projected, projected)
+    vec3.scale(projected, projected, len)
     // console.log(len)
     // console.log(projected)
-    var len = Math.max(vec4.length(projected), 4)
-    vec3.normalize(projected, projected)
-    vec3.scale(projected, projected, len*options.gridSize*6)
     return projected
   }
 

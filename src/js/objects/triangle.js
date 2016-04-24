@@ -1,7 +1,7 @@
 'use strict'
 
 var PI = 3.14159265
-var R = 0.5
+var R = 0.25
 
 var vertices = []
 var normals = []

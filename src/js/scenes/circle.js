@@ -10,7 +10,8 @@ var scene = {
       originX: -32,
       originZ: -32,
       sizeX: 64,
-      sizeZ: 64
+      sizeZ: 64,
+      gridSize: 0.125
     }
   },
 
