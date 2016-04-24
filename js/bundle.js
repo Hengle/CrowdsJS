@@ -43101,6 +43101,29 @@ PanelUI.create('container', layout)
 document.getElementById('sidebar').appendChild(document.getElementById('sidebar-content'))
 document.getElementById('main').appendChild(document.getElementById('main-content'))
 
+var QueryString = function () {
+  // This function is anonymous, is executed immediately and 
+  // the return value is assigned to QueryString!
+  var query_string = {};
+  var query = window.location.search.substring(1);
+  var vars = query.split("&");
+  for (var i=0;i<vars.length;i++) {
+    var pair = vars[i].split("=");
+        // If first entry with this name
+    if (typeof query_string[pair[0]] === "undefined") {
+      query_string[pair[0]] = decodeURIComponent(pair[1]);
+        // If second entry with this name
+    } else if (typeof query_string[pair[0]] === "string") {
+      var arr = [ query_string[pair[0]],decodeURIComponent(pair[1]) ];
+      query_string[pair[0]] = arr;
+        // If third or later entry with this name
+    } else {
+      query_string[pair[0]].push(decodeURIComponent(pair[1]));
+    }
+  } 
+    return query_string;
+}();
+
 domready(function () {
   var canvas = document.getElementById('canvas')
   var gl = new MyGL()
@@ -43260,7 +43283,24 @@ domready(function () {
     }
   }
 
-  loadScene(CircleScene)
+  if (QueryString.vis == 'voronoi') {
+    visSettings.groundPlane = 'voronoi'
+  } else if (QueryString.vis == 'voronoiRefine') {
+    visSettings.groundPlane = 'voronoiRefine'
+  } else if (QueryString.vis == 'weights') {
+    visSettings.groundPlane = 'weights'
+  } else if (QueryString.vis == 'comfort') {
+    visSettings.groundPlane = 'comfort'
+  }
+
+  if (QueryString.scene == 'circle') {
+    loadScene(CircleScene)  
+  } else if (QueryString.scene == 'oncoming') {
+    loadScene(OncomingScene)
+  } else if (QueryString.scene == 'comfort') {
+    loadScene(ComfortScene)
+  }
+
   runSimulation()
 })
 },{"./biocrowds":186,"./mygl.js":197,"./objects/cube.js":199,"./objects/plane.js":201,"./scenes/circle.js":204,"./scenes/comfort.js":205,"./scenes/oncoming.js":206,"./shaderprogram.js":207,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],197:[function(require,module,exports){
@@ -43898,7 +43938,7 @@ var vertices = []
 var normals = []
 var indices = []
 var colors = []
-var amnt = 0.125
+var amnt = 0.25
 // top barrel
 for (var i = 0; i < CYL_COUNT; i++) {
   var theta = 2*PI*i / CYL_COUNT
