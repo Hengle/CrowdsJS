@@ -9,7 +9,7 @@ var vertices = []
 var normals = []
 var indices = []
 var colors = []
-var amnt = 0.125
+var amnt = 0.25
 // top barrel
 for (var i = 0; i < CYL_COUNT; i++) {
   var theta = 2*PI*i / CYL_COUNT
