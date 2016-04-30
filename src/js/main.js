@@ -11,6 +11,7 @@ var BioCrowds = require('./biocrowds')
 var CircleScene = require('./scenes/circle.js')
 var OncomingScene = require('./scenes/oncoming.js')
 var ComfortScene = require('./scenes/comfort.js')
+var ObstacleScene = require('./scenes/obstacle.js')
 
 var layout = {
   root: 0,
@@ -97,7 +98,8 @@ domready(function () {
     options.sim = simSettings
     biocrowds.scene = scene
     biocrowds.init()
-    biocrowds.initAgents(scene.agents)    
+    biocrowds.initAgents(scene.agents)
+    biocrowds.initObstacles(scene.obstacles)    
     gl.draw() 
 
     // document.getElementById('markerDensity').value = options.markerDensity
@@ -139,6 +141,10 @@ domready(function () {
 
   document.getElementById('comfort-scene-btn').onclick = function() {
     loadScene(ComfortScene)
+  }
+
+  document.getElementById('obstacle-scene-btn').onclick = function() {
+    loadScene(ObstacleScene)
   }
 
   var simulationInterval
@@ -235,6 +241,8 @@ domready(function () {
     loadScene(OncomingScene)
   } else if (QueryString.scene == 'comfort') {
     loadScene(ComfortScene)
+  } else if (QueryString.scene == 'obstacle') {
+    loadScene(ObstacleScene)
   }
 
   runSimulation()

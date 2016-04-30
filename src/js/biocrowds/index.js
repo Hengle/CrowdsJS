@@ -14,6 +14,7 @@ var VelocityCalculator = require('./velocity-calculate')
 var VoronoiRefine = require('./voronoi-refine')
 var TexturedPlane = require('./textured-plane')
 var NoiseGenerator = require('./noise-generator')
+var Obstacle = require('./obstacle')
 
 var defaultOptions = {
   originX: -16,
@@ -40,6 +41,7 @@ var BioCrowds = function(gl, options) {
   options.gridDepth = gridDepth
 
   var agents= []
+  var obstacles = []
   var drawables = []
 
   var projector
@@ -163,6 +165,31 @@ var BioCrowds = function(gl, options) {
       voronoiGenerator.initAgentBuffers(agents)
     },
 
+    initObstacles: function(theobstacles) {
+      if (!theobstacles) return
+      obstacles = theobstacles
+      var iden = mat4.create()
+      var col = vec4.fromValues(0.2, 0.2, 0.2, 1)
+
+      var obstacleDrawable = function(idx) {
+        var obj = obstacles[idx].obj.get()
+        return {
+          draw: function() {
+            gl.Lambert.setColor(col)
+            gl.Lambert.setModelMat(iden)
+            gl.Lambert.draw(obj)
+          }
+        }
+      }
+
+      for (var i = 0; i < obstacles.length; i++) {
+        obstacles[i].obj = new Obstacle(obstacles[i].points)
+        var obj = obstacleDrawable(i)
+        gl.drawables.push(obj)
+        drawables.push(obj)
+      }
+    },
+
     step: function(t) {
       var GL = gl.getGL()
 
@@ -173,10 +200,24 @@ var BioCrowds = function(gl, options) {
       GL.clear( GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
       voronoiGenerator.draw()
 
+      gl.Lambert.setViewProj(projector.viewproj)
+      gl.Lambert.setColor(vec4.fromValues(1,1,1,1))
+      gl.Lambert.setModelMat(mat4.create())
+      for (var i = 0; i < obstacles.length; i++) {
+        gl.Lambert.draw(obstacles[i].obj.get())
+      }
+
       GL.bindFramebuffer(GL.FRAMEBUFFER, null)
       GL.viewport(0, 0, 150, 150)
       GL.clear( GL.DEPTH_BUFFER_BIT )
       voronoiGenerator.draw()
+
+      gl.Lambert.setViewProj(projector.viewproj)
+      gl.Lambert.setColor(vec4.fromValues(1,1,1,1))
+      gl.Lambert.setModelMat(mat4.create())
+      for (var i = 0; i < obstacles.length; i++) {
+        gl.Lambert.draw(obstacles[i].obj.get())
+      }
 
       GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiRefine.fbo)
       GL.viewport(0, 0, options.gridWidth, options.gridDepth)

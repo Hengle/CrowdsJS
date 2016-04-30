@@ -20522,6 +20522,7 @@ var VelocityCalculator = require('./velocity-calculate')
 var VoronoiRefine = require('./voronoi-refine')
 var TexturedPlane = require('./textured-plane')
 var NoiseGenerator = require('./noise-generator')
+var Obstacle = require('./obstacle')
 
 var defaultOptions = {
   originX: -16,
@@ -20548,6 +20549,7 @@ var BioCrowds = function(gl, options) {
   options.gridDepth = gridDepth
 
   var agents= []
+  var obstacles = []
   var drawables = []
 
   var projector
@@ -20671,6 +20673,31 @@ var BioCrowds = function(gl, options) {
       voronoiGenerator.initAgentBuffers(agents)
     },
 
+    initObstacles: function(theobstacles) {
+      if (!theobstacles) return
+      obstacles = theobstacles
+      var iden = mat4.create()
+      var col = vec4.fromValues(0.2, 0.2, 0.2, 1)
+
+      var obstacleDrawable = function(idx) {
+        var obj = obstacles[idx].obj.get()
+        return {
+          draw: function() {
+            gl.Lambert.setColor(col)
+            gl.Lambert.setModelMat(iden)
+            gl.Lambert.draw(obj)
+          }
+        }
+      }
+
+      for (var i = 0; i < obstacles.length; i++) {
+        obstacles[i].obj = new Obstacle(obstacles[i].points)
+        var obj = obstacleDrawable(i)
+        gl.drawables.push(obj)
+        drawables.push(obj)
+      }
+    },
+
     step: function(t) {
       var GL = gl.getGL()
 
@@ -20681,10 +20708,24 @@ var BioCrowds = function(gl, options) {
       GL.clear( GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT)
       voronoiGenerator.draw()
 
+      gl.Lambert.setViewProj(projector.viewproj)
+      gl.Lambert.setColor(vec4.fromValues(1,1,1,1))
+      gl.Lambert.setModelMat(mat4.create())
+      for (var i = 0; i < obstacles.length; i++) {
+        gl.Lambert.draw(obstacles[i].obj.get())
+      }
+
       GL.bindFramebuffer(GL.FRAMEBUFFER, null)
       GL.viewport(0, 0, 150, 150)
       GL.clear( GL.DEPTH_BUFFER_BIT )
       voronoiGenerator.draw()
+
+      gl.Lambert.setViewProj(projector.viewproj)
+      gl.Lambert.setColor(vec4.fromValues(1,1,1,1))
+      gl.Lambert.setModelMat(mat4.create())
+      for (var i = 0; i < obstacles.length; i++) {
+        gl.Lambert.draw(obstacles[i].obj.get())
+      }
 
       GL.bindFramebuffer(GL.FRAMEBUFFER, voronoiRefine.fbo)
       GL.viewport(0, 0, options.gridWidth, options.gridDepth)
@@ -20759,7 +20800,7 @@ var BioCrowds = function(gl, options) {
 }
 
 module.exports = BioCrowds
-},{"../gl":194,"../lib/sobol.js":195,"../objects/cone.js":198,"../objects/cube.js":199,"../objects/cylinder.js":200,"../objects/plane.js":201,"../objects/triangle.js":203,"../shaderprogram.js":207,"./noise-generator":187,"./projector":188,"./textured-plane":189,"./velocity-calculate":190,"./voronoi-generate":191,"./voronoi-refine":192}],187:[function(require,module,exports){
+},{"../gl":195,"../lib/sobol.js":196,"../objects/cone.js":199,"../objects/cube.js":200,"../objects/cylinder.js":201,"../objects/plane.js":202,"../objects/triangle.js":204,"../shaderprogram.js":209,"./noise-generator":187,"./obstacle":188,"./projector":189,"./textured-plane":190,"./velocity-calculate":191,"./voronoi-generate":192,"./voronoi-refine":193}],187:[function(require,module,exports){
 var GL = require('../gl.js')
 
 module.exports = function() {
@@ -20844,7 +20885,151 @@ module.exports = function() {
     return noise_tex.tex
   }
 }
-},{"../gl.js":194}],188:[function(require,module,exports){
+},{"../gl.js":195}],188:[function(require,module,exports){
+'use strict'
+
+var GL = require('../gl')
+
+var Obstacle = function(points) {
+  var gl = GL.get()
+
+  var vertices = []
+  var normals = []
+  var indices = []
+  var colors = []
+  var N = points.length
+
+  // bottom verts
+  for (var i = 0; i < N; i++) {
+    vertices.push(vec4.fromValues(points[i][0], 0, points[i][1], 1))
+  }
+
+  // top verts
+  for (var i = 0; i < N; i++) {
+    vertices.push(vec4.fromValues(points[i][0], 1, points[i][1], 1))
+  }
+
+  // bottom barrel verts
+  for (var i = 0; i < N; i++) {
+    vertices.push(vec4.fromValues(points[i][0], 0, points[i][1], 1))
+  }
+
+  // top barrel verts
+  for (var i = 0; i < N; i++) {
+    vertices.push(vec4.fromValues(points[i][0], 1, points[i][1], 1))
+  }
+
+  for (var i = 0; i < N; i++) {
+    normals.push(vec4.fromValues(0,-1,0,0))
+  }
+
+  for (var i = 0; i < N; i++) {
+    normals.push(vec4.fromValues(0,1,0,0))
+  }
+
+  var up = vec3.fromValues(0,1,0)
+  for (var i = 0; i < N; i++) {
+    var norm = vec4.create()
+    vec3.sub(norm, vertices[i], vertices[(i+1)%N])
+    vec3.cross(norm, up, norm)
+    vec3.normalize(norm, norm)
+    normals.push(norm)
+  }
+
+  for (var i = 0; i < N; i++) {
+    var norm = vec4.create()
+    vec3.sub(norm, vertices[i], vertices[(i+1)%N])
+    vec3.cross(norm, up, norm)
+    vec3.normalize(norm, norm)
+    normals.push(norm)
+  }
+
+  for (var i=0; i < 4*N; i++) {
+    colors = colors.concat([0.8, 0.8, 0.8, 1.0]);
+  }
+
+  // build top vertices
+  for (var i = 1; i < N-1; i++) {
+    indices = indices.concat([
+      0, 
+      i, 
+      (i+1)%N
+    ])
+  }
+
+  // build bottom vertices
+  for (var i = 1; i < N-1; i++) {
+    indices = indices.concat([
+      N + 0, 
+      N + i, 
+      N + (i+1)%N
+    ])
+  }
+
+  // build barrel vertices
+  for (var i=0; i < N; i++) {
+    indices = indices.concat([
+      2*N + i, 
+      2*N + (i+1)%N, 
+      2*N + N + (i+1)%N
+    ])
+    indices = indices.concat([
+      2*N + i, 
+      2*N + N + (i+1)%N, 
+      2*N + N + i
+    ])
+  }
+
+  vertices = vertices.reduce(function(a, b) {
+    a.push.apply(a, b)
+    return a
+  }, [])
+
+  normals = normals.reduce(function(a, b) {
+    a.push.apply(a, b)
+    return a
+  }, [])
+
+  var Geo = {}
+
+  this.get = function() {
+    return Geo
+  }
+
+  var vertexPositionBuffer = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW)
+  vertexPositionBuffer.itemSize = 4
+  vertexPositionBuffer.numItems = vertices.length / 4
+  
+  var vertexColorBuffer = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
+  vertexColorBuffer.itemSize = 4
+  vertexColorBuffer.numItems = colors.length / 4
+
+  var vertexNormalBuffer = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexNormalBuffer)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW)
+  vertexNormalBuffer.itemSize = 4
+  vertexNormalBuffer.numItems = normals.length / 4
+
+  var vertexIndexBuffer = gl.createBuffer()
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vertexIndexBuffer)
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW)
+  vertexIndexBuffer.itemSize = 1
+  vertexIndexBuffer.numItems = indices.length
+
+  Geo.positions = vertexPositionBuffer
+  Geo.normals = vertexNormalBuffer
+  Geo.colors = vertexColorBuffer
+  Geo.indices = vertexIndexBuffer
+  Geo.count = indices.length
+  Geo.drawMode = gl.TRIANGLES
+}
+
+module.exports = Obstacle;
+},{"../gl":195}],189:[function(require,module,exports){
 'use strict'
 
 module.exports = function(options) {
@@ -20880,7 +21065,7 @@ module.exports = function(options) {
   return projector
 
 }
-},{}],189:[function(require,module,exports){
+},{}],190:[function(require,module,exports){
 'use strict'
 
 var GL = require('../gl.js')
@@ -20993,7 +21178,7 @@ module.exports = function(options) {
   }
 }
 
-},{"../gl.js":194,"../objects/plane.js":201}],190:[function(require,module,exports){
+},{"../gl.js":195,"../objects/plane.js":202}],191:[function(require,module,exports){
 'use strict'
 
 var GL = require('../gl.js')
@@ -21291,7 +21476,7 @@ module.exports = function(options) {
     gl.disableVertexAttribArray(shaderProgram.attrUv)
   }
 }
-},{"../gl.js":194}],191:[function(require,module,exports){
+},{"../gl.js":195}],192:[function(require,module,exports){
 'use strict'
 
 var Cone = require('../objects/cone.js')
@@ -21488,7 +21673,7 @@ module.exports = function(options) {
     }
   }
 }
-},{"../gl.js":194,"../objects/cone.js":198,"../objects/skewed-cone.js":202}],192:[function(require,module,exports){
+},{"../gl.js":195,"../objects/cone.js":199,"../objects/skewed-cone.js":203}],193:[function(require,module,exports){
 'use strict'
 
 var GL = require('../gl.js')
@@ -21584,7 +21769,7 @@ module.exports = function(options) {
     // gl.bindFramebuffer(gl.FRAMEBUFFER, null)
   }
 }
-},{"../gl.js":194}],193:[function(require,module,exports){
+},{"../gl.js":195}],194:[function(require,module,exports){
 'use strict'
 
 var DEG2RAD = 3.14159265 / 180
@@ -21715,7 +21900,7 @@ var Camera = function(w, h) {
 }
 
 module.exports = Camera
-},{}],194:[function(require,module,exports){
+},{}],195:[function(require,module,exports){
 'use strict'
 
 var GL
@@ -21787,7 +21972,7 @@ module.exports =  {
     return texture
   }
 }
-},{}],195:[function(require,module,exports){
+},{}],196:[function(require,module,exports){
 (function (process){
 var BITS = 52;
 var SCALE = 2 << 51;
@@ -43061,7 +43246,7 @@ function test(){
 }
 if(require.main === module) return test();
 }).call(this,require('_process'))
-},{"_process":3}],196:[function(require,module,exports){
+},{"_process":3}],197:[function(require,module,exports){
 'use strict';
 
 var domready = require("domready");
@@ -43075,6 +43260,7 @@ var BioCrowds = require('./biocrowds')
 var CircleScene = require('./scenes/circle.js')
 var OncomingScene = require('./scenes/oncoming.js')
 var ComfortScene = require('./scenes/comfort.js')
+var ObstacleScene = require('./scenes/obstacle.js')
 
 var layout = {
   root: 0,
@@ -43161,7 +43347,8 @@ domready(function () {
     options.sim = simSettings
     biocrowds.scene = scene
     biocrowds.init()
-    biocrowds.initAgents(scene.agents)    
+    biocrowds.initAgents(scene.agents)
+    biocrowds.initObstacles(scene.obstacles)    
     gl.draw() 
 
     // document.getElementById('markerDensity').value = options.markerDensity
@@ -43203,6 +43390,10 @@ domready(function () {
 
   document.getElementById('comfort-scene-btn').onclick = function() {
     loadScene(ComfortScene)
+  }
+
+  document.getElementById('obstacle-scene-btn').onclick = function() {
+    loadScene(ObstacleScene)
   }
 
   var simulationInterval
@@ -43299,11 +43490,13 @@ domready(function () {
     loadScene(OncomingScene)
   } else if (QueryString.scene == 'comfort') {
     loadScene(ComfortScene)
+  } else if (QueryString.scene == 'obstacle') {
+    loadScene(ObstacleScene)
   }
 
   runSimulation()
 })
-},{"./biocrowds":186,"./mygl.js":197,"./objects/cube.js":199,"./objects/plane.js":201,"./scenes/circle.js":204,"./scenes/comfort.js":205,"./scenes/oncoming.js":206,"./shaderprogram.js":207,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],197:[function(require,module,exports){
+},{"./biocrowds":186,"./mygl.js":198,"./objects/cube.js":200,"./objects/plane.js":202,"./scenes/circle.js":205,"./scenes/comfort.js":206,"./scenes/obstacle.js":207,"./scenes/oncoming.js":208,"./shaderprogram.js":209,"css-element-queries/src/ResizeSensor":1,"domready":2,"panelui":23}],198:[function(require,module,exports){
 'use strict';
 
 var Cube = require('./objects/cube.js')
@@ -43456,7 +43649,7 @@ module.exports = function() {
     }
   }
 }
-},{"./camera.js":193,"./gl.js":194,"./objects/cone.js":198,"./objects/cube.js":199,"./objects/cylinder.js":200,"./objects/plane.js":201,"./objects/skewed-cone.js":202,"./objects/triangle.js":203,"./shaderprogram.js":207}],198:[function(require,module,exports){
+},{"./camera.js":194,"./gl.js":195,"./objects/cone.js":199,"./objects/cube.js":200,"./objects/cylinder.js":201,"./objects/plane.js":202,"./objects/skewed-cone.js":203,"./objects/triangle.js":204,"./shaderprogram.js":209}],199:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 15
@@ -43573,7 +43766,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],199:[function(require,module,exports){
+},{}],200:[function(require,module,exports){
 'use strict'
 
 var cubeVertexPositionBuffer
@@ -43712,7 +43905,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],200:[function(require,module,exports){
+},{}],201:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 20
@@ -43837,7 +44030,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],201:[function(require,module,exports){
+},{}],202:[function(require,module,exports){
 'use strict'
 
 var vertexPositionBuffer
@@ -43926,7 +44119,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],202:[function(require,module,exports){
+},{}],203:[function(require,module,exports){
 'use strict'
 
 var CYL_COUNT = 15
@@ -44045,7 +44238,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],203:[function(require,module,exports){
+},{}],204:[function(require,module,exports){
 'use strict'
 
 var PI = 3.14159265
@@ -44117,7 +44310,7 @@ module.exports = {
     Geo.drawMode = gl.TRIANGLES
   }
 }
-},{}],204:[function(require,module,exports){
+},{}],205:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -44168,7 +44361,7 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],205:[function(require,module,exports){
+},{"onecolor":4}],206:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -44230,7 +44423,103 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],206:[function(require,module,exports){
+},{"onecolor":4}],207:[function(require,module,exports){
+'use strict'
+
+var Color = require('onecolor') 
+
+var RES = 10
+
+var scene = {
+  options: function() {
+    return {
+      originX: -16,
+      originZ: -16,
+      sizeX: 32,
+      sizeZ: 32,
+      gridSize: 0.125,
+    }
+  },
+
+  agents: [],
+
+  create: function() {
+    var ID = 0;
+    scene.agents = []
+    scene.obstacles = []
+
+    for (var i = -15; i < 15; i+=1) {
+      for (var j = 12; j < 16; j+=2) {
+
+      
+        var idr = ID % RES
+        var idg = Math.floor(ID / RES) % RES
+        var idb = Math.floor(ID / (RES*RES))
+        ++ID
+
+        scene.agents.push({
+          pos: vec3.fromValues(i, 0, -j),
+          forward: vec3.fromValues(0,0,1),
+          col: vec4.fromValues(1,0,0,1),
+          vel: vec3.create(),
+          goal: vec3.fromValues(i, 0, 10),
+          id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+        })
+
+        idr = ID % RES
+        idg = Math.floor(ID / RES) % RES
+        idb = Math.floor(ID / (RES*RES))
+        ++ID
+
+        scene.agents.push({
+          pos: vec3.fromValues(i, 0, j),
+          forward: vec3.fromValues(0,0,-1),
+          col: vec4.fromValues(0,0,1,1),
+          vel: vec3.create(),
+          goal: vec3.fromValues(i, 0, -10),
+          id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+        })
+
+      }      
+    }
+
+    /*scene.obstacles.push({
+      points: [
+        [-4 - 2, -4 + 2],
+        [-4 - 2, 4 + 2],
+        [4 - 2, 4 + 2],
+        // [4,-4]        
+      ]
+    })
+
+    scene.obstacles.push({
+      points: [
+        [-4 + 2, -4 - 2],
+        // [-4,4],
+        [4 + 2, 4 - 2],
+        [4 + 2, -4 - 2]        
+      ]
+    })*/
+
+    scene.obstacles.push({
+      // points: [
+      //   [-1,-1],
+      //   [-1,1],
+      //   [1,1],
+      //   [1,-1]
+      // ]
+      points: [
+        [0,3],
+        [-3,0],
+        [0,-3],
+        [3,0]
+      ]
+    })
+  }
+}
+
+module.exports = scene
+},{"onecolor":4}],208:[function(require,module,exports){
 'use strict'
 
 var Color = require('onecolor') 
@@ -44294,7 +44583,7 @@ var scene = {
 }
 
 module.exports = scene
-},{"onecolor":4}],207:[function(require,module,exports){
+},{"onecolor":4}],209:[function(require,module,exports){
 'use strict';
 
 var ANGLE_initialized = false;
@@ -44474,4 +44763,4 @@ module.exports = function (gl, shaders) {
 
   this.init(shaders);
 }
-},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207]);
+},{}]},{},[186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209]);
