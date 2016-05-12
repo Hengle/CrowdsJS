@@ -1,7 +1,7 @@
 'use strict'
 
-var GL = require('../gl.js')
-var Plane = require('../objects/plane.js')
+var GL = require('../../gl.js')
+var Plane = require('../../objects/plane.js')
 
 module.exports = function(options) {
   var gl = GL.get()
@@ -43,8 +43,10 @@ module.exports = function(options) {
   // uvs.itemSize = 2
   // uvs.numItems = 4
 
+  var plane = Plane.get()
+  
   this.draw = function() {
-    var plane = Plane.get()
+    
     // mat4.identity(modelMat)
     // mat4.scale(planeTrans, planeTrans, vec3.fromValues(options.sizeX, 1, options.sizeZ))
     // console.log(plane)

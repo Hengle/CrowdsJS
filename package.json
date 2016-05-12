@@ -17,6 +17,7 @@
   "private": true,
   "dependencies": {
     "css-element-queries": "^0.3.2",
+    "double-ended-queue": "^0.9.7",
     "fs": "0.0.2",
     "onecolor": "^3.0.0",
     "panelui": "0.0.2"

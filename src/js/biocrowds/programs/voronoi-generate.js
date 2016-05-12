@@ -1,8 +1,8 @@
 'use strict'
 
-var Cone = require('../objects/cone.js')
-var SkewedCone = require('../objects/skewed-cone.js')
-var GL = require('../gl.js')
+var Cone = require('../../objects/cone.js')
+var SkewedCone = require('../../objects/skewed-cone.js')
+var GL = require('../../gl.js')
 
 module.exports = function(options) {
   var gl = GL.get()
@@ -124,6 +124,8 @@ module.exports = function(options) {
 
   this.draw = function() {
     gl.useProgram(shaderProgram)
+
+    gl.clear( GL.DEPTH_BUFFER_BIT )
 
     if (shaderProgram.attrPos != -1 && sprites.positions) {
       gl.bindBuffer(gl.ARRAY_BUFFER, sprites.positions)
