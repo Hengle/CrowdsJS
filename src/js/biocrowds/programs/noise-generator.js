@@ -1,11 +1,11 @@
-var GL = require('../gl.js')
+var GL = require('../../gl')
 
 module.exports = function() {
   var gl = GL.get()
   var ext = gl.getExtension("ANGLE_instanced_arrays")
 
   var shaderProgram = gl.createProgram()
-  gl.attachShader(shaderProgram, GL.getShader(noise_vertex_shader_src, gl.VERTEX_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(fullscreen_quad_vertex_shader_src, gl.VERTEX_SHADER))
   gl.attachShader(shaderProgram, GL.getShader(noise_fragment_shader_src, gl.FRAGMENT_SHADER))
   gl.linkProgram(shaderProgram)
 

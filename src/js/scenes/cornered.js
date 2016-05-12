@@ -22,25 +22,33 @@ var scene = {
     scene.agents = []
     scene.obstacles = []
 
-    for (var i = -15; i < 15; i+=1) {
-
+    var makeRobber = function(x, z) {
       var idr = ID % RES
       var idg = Math.floor(ID / RES) % RES
       var idb = Math.floor(ID / (RES*RES))
       ++ID
 
       scene.agents.push({
-        pos: vec3.fromValues(i, 0, -15),
+        pos: vec3.fromValues(x, 0, z),
         forward: vec3.fromValues(0,0,1),
         col: vec4.fromValues(1,0,0,1),
         vel: vec3.create(),
-        goal: vec3.fromValues(i, 0, 15),
-        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+        goal: vec3.fromValues(x, 0, z),
+        id: vec3.fromValues(idr/RES,idg/RES,idb/RES),
+        type: 'ROBBER'
       })
+    }
 
-      idr = ID % RES
-      idg = Math.floor(ID / RES) % RES
-      idb = Math.floor(ID / (RES*RES))
+    for (var i = 4; i < 9; i += 1.5) {
+      for (var j = -10; j < -4; j += 1.5) {
+        makeRobber(i, j)
+      }
+    }
+
+    for (var i = -10; i < 10; i+=1) {
+      var idr = ID % RES
+      var idg = Math.floor(ID / RES) % RES
+      var idb = Math.floor(ID / (RES*RES))
       ++ID
 
       scene.agents.push({
@@ -49,41 +57,25 @@ var scene = {
         col: vec4.fromValues(0,0,1,1),
         vel: vec3.create(),
         goal: vec3.fromValues(i, 0, -15),
-        id: vec3.fromValues(idr/RES,idg/RES,idb/RES)
+        id: vec3.fromValues(idr/RES,idg/RES,idb/RES),
+        type: 'COP'
       })
-      
     }
 
-    /*scene.obstacles.push({
+    scene.obstacles.push({
       points: [
-        [-4 - 2, -4 + 2],
-        [-4 - 2, 4 + 2],
-        [4 - 2, 4 + 2],
-        // [4,-4]        
+        [2+0,4+8],
+        [2+10,8+0],
+        [2+0,4+-8]
+        // [5+3,0]
       ]
     })
-
     scene.obstacles.push({
       points: [
-        [-4 + 2, -4 - 2],
-        // [-4,4],
-        [4 + 2, 4 - 2],
-        [4 + 2, -4 - 2]        
-      ]
-    })*/
-
-    scene.obstacles.push({
-      // points: [
-      //   [-1,-1],
-      //   [-1,1],
-      //   [1,1],
-      //   [1,-1]
-      // ]
-      points: [
-        [0,4],
-        [-4,0],
-        [0,-4],
-        [4,0]
+        [-2+0,-4+8],
+        // [-5+-3,0],
+        [-2+0,-4+-8],
+        [-2-10,-8+0]
       ]
     })
   }

@@ -1,6 +1,6 @@
 'use strict'
 
-var GL = require('../gl')
+var GL = require('../../gl')
 
 var Obstacle = function(points) {
   var gl = GL.get()

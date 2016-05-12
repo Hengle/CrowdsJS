@@ -6,6 +6,7 @@ var Cylinder = require('./objects/cylinder.js')
 var Cone = require('./objects/cone.js')
 var SkewedCone = require('./objects/skewed-cone.js')
 var Triangle = require('./objects/triangle.js')
+var Quad = require('./objects/fullscreen-quad.js')
 var ShaderProgram = require('./shaderprogram.js')
 var Camera = require('./camera.js')
 var GL = require('./gl.js')
@@ -47,6 +48,7 @@ module.exports = function() {
     Triangle.create(gl)
     Cone.create(gl)
     SkewedCone.create(gl)
+    Quad.create(gl)
 
     gl.lineWidth(1.0)
     

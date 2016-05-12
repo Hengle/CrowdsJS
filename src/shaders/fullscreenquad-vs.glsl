@@ -1,4 +1,4 @@
-//#gljs varname: 'voronoi_refine_vertex_shader_src' 
+//#gljs varname: 'fullscreen_quad_vertex_shader_src' 
 
 attribute vec4 vs_pos;
 attribute vec2 vs_uv;

@@ -12,6 +12,8 @@ var CircleScene = require('./scenes/circle.js')
 var OncomingScene = require('./scenes/oncoming.js')
 var ComfortScene = require('./scenes/comfort.js')
 var ObstacleScene = require('./scenes/obstacle.js')
+var CornerScene = require('./scenes/cornered.js')
+var TwoTwoScene = require('./scenes/2v2.js')
 
 var layout = {
   root: 0,
@@ -147,6 +149,14 @@ domready(function () {
     loadScene(ObstacleScene)
   }
 
+  document.getElementById('corner-scene-btn').onclick = function() {
+    loadScene(CornerScene)
+  }
+
+  document.getElementById('2v2-scene-btn').onclick = function() {
+    loadScene(TwoTwoScene)
+  }
+
   var simulationInterval
 
   var diff = 33.33333
@@ -225,7 +235,7 @@ domready(function () {
     }
   }
 
-  if (QueryString.vis == 'voronoi') {
+  /*if (QueryString.vis == 'voronoi') {
     visSettings.groundPlane = 'voronoi'
   } else if (QueryString.vis == 'voronoiRefine') {
     visSettings.groundPlane = 'voronoiRefine'
@@ -233,7 +243,8 @@ domready(function () {
     visSettings.groundPlane = 'weights'
   } else if (QueryString.vis == 'comfort') {
     visSettings.groundPlane = 'comfort'
-  }
+  }*/
+  visSettings.groundPlane = QueryString.vis
 
   if (QueryString.scene == 'circle') {
     loadScene(CircleScene)  
@@ -243,6 +254,10 @@ domready(function () {
     loadScene(ComfortScene)
   } else if (QueryString.scene == 'obstacle') {
     loadScene(ObstacleScene)
+  } else if (QueryString.scene == 'cornered') {
+    loadScene(CornerScene)
+  } else if (QueryString.scene == '2v2') {
+    loadScene(TwoTwoScene)
   }
 
   runSimulation()

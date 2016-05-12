@@ -1,6 +1,6 @@
 'use strict'
 
-var GL = require('../gl.js')
+var GL = require('../../gl.js')
 
 module.exports = function(options) {
   var gl = GL.get()
@@ -10,7 +10,7 @@ module.exports = function(options) {
   var frag_shader = voronoi_refine_fragment_shader_src.replace(/1337/g, shrinkAmnt)
 
   var shaderProgram = gl.createProgram()
-  gl.attachShader(shaderProgram, GL.getShader(voronoi_refine_vertex_shader_src, gl.VERTEX_SHADER))
+  gl.attachShader(shaderProgram, GL.getShader(fullscreen_quad_vertex_shader_src, gl.VERTEX_SHADER))
   gl.attachShader(shaderProgram, GL.getShader(frag_shader, gl.FRAGMENT_SHADER))
   gl.linkProgram(shaderProgram)
 
